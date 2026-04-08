@@ -1,6 +1,9 @@
 -- Database schema for Faculty Student Management System
 -- Code and comments in English, documentation in Spanish
 
+CREATE USER aida26_owner;
+CREATE USER aida26_admin LOGIN 'CambiaEsta!';
+
 -- Create database
 CREATE DATABASE faculty_management;
 alter database faculty_management owner to aida26_owner;
@@ -8,6 +11,7 @@ alter database faculty_management owner to aida26_owner;
 -- Use the database
 \c faculty_management;
 set role to aida26_owner;
+GRANT connect on database faculty_management to aida26_user;
 
 -- Students table
 -- numero_libreta is the primary key, not auto-incrementing
@@ -44,3 +48,7 @@ CREATE TABLE enrollments (
 -- Indexes for performance
 CREATE INDEX idx_students_status ON students(status);
 CREATE INDEX idx_enrollments_status ON enrollments(status);
+
+GRANT SELECT, UPDATE, INSERT, DELETE ON students TO aida26_user;
+GRANT SELECT, UPDATE, INSERT, DELETE ON enrollments TO aida26_user;
+GRANT SELECT, UPDATE, INSERT, DELETE ON subjects TO aida26_user;
