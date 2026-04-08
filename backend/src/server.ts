@@ -50,10 +50,10 @@ app.get('/api/students/:numero_libreta', async (req, res) => {
 
 app.post('/api/students', async (req, res) => {
   try {
-    const { numero_libreta, first_name, last_name, email, enrollment_date, status } = req.body;
+    const { numero_libreta, dni, first_name, last_name, email, enrollment_date, status } = req.body;
     const result = await pool.query(
-      'INSERT INTO students (numero_libreta, first_name, last_name, email, enrollment_date, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [numero_libreta, first_name, last_name, email, enrollment_date, status]
+      'INSERT INTO students (numero_libreta, dni, first_name, last_name, email, enrollment_date, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [numero_libreta, dni, first_name, last_name, email, enrollment_date, status]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -65,10 +65,10 @@ app.post('/api/students', async (req, res) => {
 app.put('/api/students/:numero_libreta', async (req, res) => {
   try {
     const { numero_libreta } = req.params;
-    const { first_name, last_name, email, enrollment_date, status } = req.body;
+    const { dni, first_name, last_name, email, enrollment_date, status } = req.body;
     const result = await pool.query(
-      'UPDATE students SET first_name = $1, last_name = $2, email = $3, enrollment_date = $4, status = $5 WHERE numero_libreta = $6 RETURNING *',
-      [first_name, last_name, email, enrollment_date, status, numero_libreta]
+      'UPDATE students SET dni = $1, first_name = $2, last_name = $3, email = $4, enrollment_date = $5, status = $6 WHERE numero_libreta = $7 RETURNING *',
+      [dni, first_name, last_name, email, enrollment_date, status, numero_libreta]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });

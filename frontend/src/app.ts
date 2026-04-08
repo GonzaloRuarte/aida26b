@@ -3,9 +3,45 @@
 
 const API_BASE = '/api';
 
+type TableStructure = {
+  columns: Record<string, {type:string}>
+  pk: string
+  uiName: string
+}
+
+const structure = {
+  tables: {
+    students: {
+      columns:{
+        numero_libreta   :{type: 'string', label: "Número de Libreta / Student ID:"},
+        dni              :{type: 'string'},
+        first_name       :{type: 'string'},
+        last_name        :{type: 'string'},
+        email            :{type: 'string'},
+        enrollment_date  :{type: 'string'},
+        status           :{type: 'string'},
+      },
+      pk: 'numero_libreta',
+      uiName: 'Student'
+    },
+    subject: {
+      columns:{
+        cod_mat     :{type: 'string'},
+        name        :{type: 'string'},
+        description :{type: 'string'},
+        credits     :{type: 'string'},
+        department  :{type: 'string'},
+      },
+      pk: 'cod_mat',
+      uiName: 'Subject'
+    }
+  }
+}
+
 // Type definitions
 interface Student {
   numero_libreta: string;
+  dni: string;
   first_name: string;
   last_name: string;
   email: string;
@@ -120,48 +156,34 @@ async function loadEnrollments() {
   }
 }
 
-// Render table functions
-function renderStudentsTable(students: Student[]) {
-  const tbody = studentsTable.querySelector('tbody')!;
+function renderAnyTable(tableElement: HTMLTableElement, tableStructure: TableStructure, records: Record<string, any>[]){
+  const tbody = tableElement.querySelector('tbody')!;
   tbody.innerHTML = '';
 
-  students.forEach(student => {
+  records.forEach(record => {
+    const {pk, uiName} = tableStructure;
+    const pkValue = encodeURIComponent(record[pk]);
     const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${student.numero_libreta}</td>
-      <td>${student.first_name}</td>
-      <td>${student.last_name}</td>
-      <td>${student.email || ''}</td>
-      <td>${student.enrollment_date || ''}</td>
-      <td>${student.status || ''}</td>
+    row.innerHTML = 
+      Object.entries(tableStructure.columns).map(([name]) => `<td>${record[name] || ''}</td>`).join('')
+      +
+    `
       <td class="actions">
-        <button class="edit-btn" onclick="editStudent('${student.numero_libreta}')">Editar / Edit</button>
-        <button class="delete-btn" onclick="deleteStudent('${student.numero_libreta}')">Eliminar / Delete</button>
+        <button class="edit-btn" onclick="edit${uiName}('${pkValue}')">Editar / Edit</button>
+        <button class="delete-btn" onclick="delete${uiName}('${pkValue}')">Eliminar / Delete</button>
       </td>
     `;
     tbody.appendChild(row);
   });
 }
 
-function renderSubjectsTable(subjects: Subject[]) {
-  const tbody = subjectsTable.querySelector('tbody')!;
-  tbody.innerHTML = '';
+// Render table functions
+function renderStudentsTable(students: Student[]) {
+  return renderAnyTable(studentsTable, structure.tables.students, students);
+}
 
-  subjects.forEach(subject => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${subject.cod_mat}</td>
-      <td>${subject.name}</td>
-      <td>${subject.description || ''}</td>
-      <td>${subject.credits || ''}</td>
-      <td>${subject.department || ''}</td>
-      <td class="actions">
-        <button class="edit-btn" onclick="editSubject('${subject.cod_mat}')">Editar / Edit</button>
-        <button class="delete-btn" onclick="deleteSubject('${subject.cod_mat}')">Eliminar / Delete</button>
-      </td>
-    `;
-    tbody.appendChild(row);
-  });
+function renderSubjectsTable(subjects: Subject[]) {
+  return renderAnyTable(subjectsTable, structure.tables.subject, subjects);
 }
 
 function renderEnrollmentsTable(enrollments: Enrollment[]) {
@@ -202,6 +224,10 @@ function showStudentForm(student?: Student) {
         <input type="text" id="numero_libreta" value="${student?.numero_libreta || ''}" ${isEdit ? 'readonly' : ''} required>
       </div>
       <div class="form-group">
+        <label for="dni">DNI / ID Number:</label>
+        <input type="text" id="dni" value="${student?.dni || ''}" required>
+      </div>
+      <div class="form-group">
         <label for="first_name">Nombre / First Name:</label>
         <input type="text" id="first_name" value="${student?.first_name || ''}" required>
       </div>
@@ -240,6 +266,7 @@ function showStudentForm(student?: Student) {
     const formData = new FormData(form);
     const studentData = {
       numero_libreta: (document.getElementById('numero_libreta') as HTMLInputElement).value,
+      dni: (document.getElementById('dni') as HTMLInputElement).value,
       first_name: (document.getElementById('first_name') as HTMLInputElement).value,
       last_name: (document.getElementById('last_name') as HTMLInputElement).value,
       email: (document.getElementById('email') as HTMLInputElement).value,

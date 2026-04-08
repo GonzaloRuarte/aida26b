@@ -17,6 +17,7 @@ GRANT connect on database faculty_management to aida26_user;
 -- numero_libreta is the primary key, not auto-incrementing
 CREATE TABLE students (
     numero_libreta VARCHAR(20) PRIMARY KEY,
+    dni VARCHAR(20) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255),
