@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Frontend for Faculty Student Management System",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ./copy-static.js",
     "start": "http-server dist -p 8080",
     "dev": "tsc --watch & http-server src -p 8080"
   },

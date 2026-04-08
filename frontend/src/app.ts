@@ -1,7 +1,7 @@
 // Main application file
 // Code and comments in English
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = '/api';
 
 // Type definitions
 interface Student {

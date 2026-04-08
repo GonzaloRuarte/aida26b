@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
+import path from 'path';
 
 // Load environment variables
 dotenv.config();
@@ -239,6 +240,14 @@ app.delete('/api/enrollments/:numero_libreta/:cod_mat', async (req, res) => {
     console.error('Error deleting enrollment:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Serve static files from frontend dist
+app.use(express.static(path.join(__dirname, '../../frontend/dist')));
+
+// Catch-all handler: send back index.html for any non-API routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../frontend/dist/index.html'));
 });
 
 app.listen(port, () => {
