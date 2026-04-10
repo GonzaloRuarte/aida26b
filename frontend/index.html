@@ -5,188 +5,420 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Gestión Académica - Faculty of Exact Sciences</title>
     <style>
+        :root {
+            --bg: #0b1020;
+            --bg-2: #111c2f;
+            --panel: rgba(14, 21, 35, 0.86);
+            --panel-strong: #121b2c;
+            --text: #edf3ff;
+            --muted: #a7b4cb;
+            --border: rgba(168, 189, 223, 0.18);
+            --accent: #33b3a6;
+            --accent-2: #5f87ff;
+            --danger: #d65d71;
+            --shadow: 0 26px 80px rgba(0, 0, 0, 0.38);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
+            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
             margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
+            height: 100vh;
+            padding: 0;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(95, 135, 255, 0.18), transparent 32%),
+                radial-gradient(circle at bottom right, rgba(51, 179, 166, 0.14), transparent 28%),
+                linear-gradient(135deg, var(--bg), var(--bg-2));
         }
+
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            inset: auto;
+            border-radius: 999px;
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(8px);
+        }
+
+        body::before {
+            top: -40px;
+            right: 8%;
+            width: 180px;
+            height: 180px;
+            background: rgba(95, 135, 255, 0.12);
+        }
+
+        body::after {
+            bottom: 12px;
+            left: 6%;
+            width: 240px;
+            height: 240px;
+            background: rgba(51, 179, 166, 0.1);
+        }
+
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            position: relative;
+            z-index: 1;
+            background: var(--panel);
+            backdrop-filter: blur(18px);
+            border: 1px solid var(--border);
+            padding: 28px;
+            border-radius: 0;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
         }
+
         h1 {
-            color: #333;
-            text-align: center;
+            margin: 0 0 20px;
+            font-size: clamp(1.6rem, 3vw, 2.4rem);
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+            text-wrap: balance;
         }
+
+        #app-root {
+            display: grid;
+            gap: 18px;
+        }
+
+        .workspace-layout {
+            display: grid;
+            grid-template-columns: minmax(210px, 290px) minmax(0, 1fr);
+            gap: 16px;
+            align-items: start;
+            min-height: calc(100vh - 190px);
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 12px;
+            align-self: start;
+        }
+
+        .content {
+            min-width: 0;
+        }
+
+        .sections-host {
+            display: grid;
+            gap: 12px;
+            min-width: 0;
+            min-height: 0;
+        }
+
         .nav {
             display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px;
+            z-index: 2;
+            background: rgba(18, 27, 44, 0.88);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+            backdrop-filter: blur(12px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-gutter: stable;
+            min-height: 0;
         }
+
         .nav button {
-            margin: 0 10px;
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
+            margin: 0;
+            padding: 12px 16px;
+            background: transparent;
+            color: var(--text);
+            text-align: left;
+            border: 1px solid transparent;
+            border-radius: 12px;
             cursor: pointer;
+            transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+            font-size: 1rem;
         }
+
         .nav button:hover {
-            background-color: #0056b3;
+            background: rgba(95, 135, 255, 0.14);
+            border-color: rgba(95, 135, 255, 0.22);
+            transform: translateY(-1px);
         }
+
         .nav button.active {
-            background-color: #0056b3;
+            background: var(--accent-2);
+            color: white;
+            border-color: transparent;
         }
-        .section {
+
+        .nav-group {
+            border: 1px solid rgba(168, 189, 223, 0.14);
+            border-radius: 12px;
+            background: rgba(13, 21, 37, 0.55);
+            overflow: hidden;
+        }
+
+        .nav-group-title {
+            list-style: none;
+            cursor: pointer;
+            padding: 10px 12px;
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--muted);
+            background: rgba(95, 135, 255, 0.08);
+            user-select: none;
+        }
+
+        .nav-group-title::-webkit-details-marker {
             display: none;
         }
-        .section.active {
-            display: block;
+
+        .nav-group-items {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 10px;
         }
+
+        .section {
+            display: none;
+            padding: 14px;
+            background: rgba(18, 27, 44, 0.84);
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+            min-width: 0;
+            height: calc(100vh - 210px);
+            overflow: hidden;
+            flex-direction: column;
+        }
+
+        .section.active {
+            display: flex;
+        }
+
+        .section h2 {
+            margin: 0 0 14px;
+            font-size: clamp(1.08rem, 1.7vw, 1.3rem);
+            letter-spacing: -0.02em;
+        }
+
+        .table-wrap {
+            overflow: auto;
+            max-width: 100%;
+            border-radius: 16px;
+            flex: 1;
+            min-height: 200px;
+            scrollbar-gutter: stable both-edges;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            margin-top: 8px;
+            background: var(--panel-strong);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            overflow: hidden;
         }
+
         th, td {
-            padding: 12px;
+            padding: 10px 12px;
             text-align: left;
-            border-bottom: 1px solid #ddd;
+            border-bottom: 1px solid rgba(19, 32, 43, 0.08);
+            vertical-align: top;
+            font-size: 0.93rem;
+            white-space: normal;
         }
+
         th {
-            background-color: #f8f9fa;
-            font-weight: bold;
+            background: linear-gradient(180deg, #1a263d, #141e32);
+            color: #c9d4ea;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            position: sticky;
+            top: 0;
+            z-index: 1;
         }
+
+        tbody tr:hover {
+            background: rgba(95, 135, 255, 0.08);
+        }
+
         .actions {
             display: flex;
-            gap: 5px;
+            flex-wrap: wrap;
+            gap: 6px;
         }
+
         button {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 4px;
+            padding: 5px 11px;
+            border: 1px solid transparent;
+            border-radius: 999px;
             cursor: pointer;
+            font: inherit;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+            font-size: 0.88rem;
         }
+
+        button:hover {
+            transform: translateY(-1px);
+            filter: brightness(0.98);
+        }
+
+
         .edit-btn {
-            background-color: #28a745;
-            color: white;
+            background-color: var(--accent);
+            color: #04161a;
         }
+
         .delete-btn {
-            background-color: #dc3545;
+            background-color: var(--danger);
             color: white;
         }
+
         .add-btn {
-            background-color: #007bff;
+            background-color: var(--accent-2);
             color: white;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
+            box-shadow: 0 10px 24px rgba(95, 135, 255, 0.22);
         }
+
         form {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            background: rgba(11, 16, 32, 0.92);
+            padding: 14px;
+            border-radius: 18px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(168, 189, 223, 0.12);
+            overflow: auto;
         }
+
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
+
         label {
             display: block;
             margin-bottom: 5px;
             font-weight: bold;
+            color: #c9d4ea;
         }
+
         input, select {
             width: 100%;
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
+            padding: 7px 9px;
+            border: 1px solid rgba(168, 189, 223, 0.16);
+            border-radius: 12px;
+            background: #0d1525;
+            color: var(--text);
+            font-size: 0.9rem;
         }
+
+        .checkbox-group label {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        input[type="checkbox"] {
+            width: auto;
+            padding: 0;
+            border: none;
+            accent-color: var(--accent-2);
+            transform: scale(1.15);
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 92px;
+            padding: 8px 10px;
+            border: 1px solid rgba(168, 189, 223, 0.16);
+            border-radius: 12px;
+            background: #0d1525;
+            color: var(--text);
+            resize: vertical;
+            font-size: 0.9rem;
+        }
+
         .form-actions {
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
             margin-top: 20px;
         }
+
         .cancel-btn {
-            background-color: #6c757d;
+            background-color: #44526f;
             color: white;
+        }
+
+        .row-action-btn {
+            background: rgba(95, 135, 255, 0.14);
+            color: #d5e0ff;
+            border-color: rgba(95, 135, 255, 0.2);
+        }
+
+        @media (max-width: 980px) {
+            .workspace-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+            }
+
+            .nav {
+                flex-direction: row;
+                flex-wrap: wrap;
+                overflow: visible;
+            }
+
+            .nav button {
+                text-align: center;
+                flex: 1;
+                min-width: 100px;
+            }
+        }
+
+        @media (max-width: 800px) {
+            body {
+                padding: 16px 10px 28px;
+            }
+
+            .container {
+                padding: 18px;
+                border-radius: 22px;
+            }
+
+            .nav {
+                padding: 10px;
+            }
+
+            .section {
+                padding: 14px;
+            }
+
+            th, td {
+                padding: 10px 12px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Sistema de Gestión Académica / Academic Management System</h1>
-        
-        <nav class="nav">
-            <button id="students-btn" class="active">Alumnos / Students</button>
-            <button id="subjects-btn">Materias / Subjects</button>
-            <button id="enrollments-btn">Inscripciones / Enrollments</button>
-        </nav>
-
-        <div id="students-section" class="section active">
-            <h2>Alumnos / Students</h2>
-            <button id="add-student-btn" class="add-btn">Agregar Alumno / Add Student</button>
-            <div id="students-form" style="display: none;"></div>
-            <table id="students-table">
-                <thead>
-                    <tr>
-                        <th>Número de Libreta / Student ID</th>
-                        <th>DNI / ID Number</th>
-                        <th>Nombre / First Name</th>
-                        <th>Apellido / Last Name</th>
-                        <th>Email</th>
-                        <th>Fecha de Inscripción / Enrollment Date</th>
-                        <th>Estado / Status</th>
-                        <th>Acciones / Actions</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-
-        <div id="subjects-section" class="section">
-            <h2>Materias / Subjects</h2>
-            <button id="add-subject-btn" class="add-btn">Agregar Materia / Add Subject</button>
-            <div id="subjects-form" style="display: none;"></div>
-            <table id="subjects-table">
-                <thead>
-                    <tr>
-                        <th>Código / Code</th>
-                        <th>Nombre / Name</th>
-                        <th>Descripción / Description</th>
-                        <th>Créditos / Credits</th>
-                        <th>Departamento / Department</th>
-                        <th>Acciones / Actions</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-
-        <div id="enrollments-section" class="section">
-            <h2>Inscripciones / Enrollments</h2>
-            <button id="add-enrollment-btn" class="add-btn">Agregar Inscripción / Add Enrollment</button>
-            <div id="enrollments-form" style="display: none;"></div>
-            <table id="enrollments-table">
-                <thead>
-                    <tr>
-                        <th>Número de Libreta / Student ID</th>
-                        <th>Nombre del Alumno / Student Name</th>
-                        <th>Código de Materia / Subject Code</th>
-                        <th>Nombre de Materia / Subject Name</th>
-                        <th>Fecha de Inscripción / Enrollment Date</th>
-                        <th>Nota / Grade</th>
-                        <th>Estado / Status</th>
-                        <th>Acciones / Actions</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
+        <div id="app-root"></div>
     </div>
 
     <script type="module" src="app.js"></script>

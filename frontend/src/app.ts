@@ -3,512 +3,1082 @@
 
 const API_BASE = '/api';
 
-type TableStructure = {
-  columns: Record<string, {type:string}>
-  pk: string
-  uiName: string
+const DEFAULT_MESSAGES = {
+  validationErrors: { es: 'Errores de validacion', en: 'Validation errors' },
+  deleteConfirm: { es: 'Esta seguro de que desea eliminar este registro?', en: 'Are you sure you want to delete this record?' },
+  required: { es: 'es obligatorio', en: 'is required' },
+  invalidFormat: { es: 'formato invalido', en: 'invalid format' },
+  mustBeAtLeast: { es: 'debe ser >=', en: 'must be >=' },
+  mustBeAtMost: { es: 'debe ser <=', en: 'must be <=' },
+} as const;
+
+const I18N: {
+  messages: Record<keyof typeof DEFAULT_MESSAGES, LocaleText>;
+} = {
+  messages: { ...DEFAULT_MESSAGES },
+};
+
+const UI_METADATA: {
+  fieldLabels: Record<string, LocaleText>;
+  optionSets: Record<string, { value: string; label: LocaleText }[]>;
+  foreignKeyOptionRowsByField: Record<string, Array<{
+    value: string;
+    label: LocaleText;
+    referencedValues: Record<string, string>;
+  }>>;
+} = {
+  fieldLabels: {},
+  optionSets: {},
+  foreignKeyOptionRowsByField: {},
+};
+
+const UI_NAVIGATION: {
+  groups: Array<{
+    key: string;
+    label: LocaleText;
+    entities: EntityKey[];
+  }>;
+} = {
+  groups: [],
+};
+
+const UI_ACTIONS: {
+  actionLabels: Record<string, LocaleText>;
+} = {
+  actionLabels: {},
+};
+
+type LocaleText = { es: string; en: string };
+type FieldControl = 'input' | 'textarea' | 'select' | 'checkbox';
+type FieldParser = 'string' | 'int' | 'intOrNull' | 'float' | 'floatOrNull' | 'boolean';
+type MessageKey = keyof typeof DEFAULT_MESSAGES;
+
+type RawFieldObject = {
+  labelKey?: string;
+  control?: FieldControl;
+  inputType?: string;
+  required?: boolean;
+  readOnlyOnEdit?: boolean;
+  step?: string;
+  optionsKey?: string;
+  parser?: FieldParser;
+  min?: number;
+  max?: number;
+  pattern?: string;
+  showInTable?: boolean;
+  showInForm?: boolean;
+};
+
+type RawFieldSpec = true | RawFieldObject;
+
+type RawEntity = {
+  names: {
+    singular: LocaleText;
+    plural: LocaleText;
+  };
+  primaryKeyFields?: string[];
+  fields: Record<string, RawFieldSpec>;
+  fieldOrder?: string[];
+  formOrder?: string[];
+  rowActions?: Array<{
+    key: string;
+    kind: 'openEntityFromField';
+    targetField: string;
+  }>;
+  foreignKeys?: Array<{
+    entityKey: string;
+    foreignKeyKey: string;
+    referencedEntityKey: string;
+    onUpdateAction: string;
+    onDeleteAction: string;
+    columns: Array<{
+      position: number;
+      columnName: string;
+      referencedColumnName: string;
+    }>;
+  }>;
+  foreignKeyDependencies?: Array<{
+    entityKey: string;
+    dependentForeignKeyKey: string;
+    requiredForeignKeyKey: string;
+    mappings: Array<{
+      sharedLocalColumnName: string;
+    }>;
+  }>;
+};
+
+type ResolvedOption = {
+  value: string;
+  label: string;
+};
+
+type CompiledField = {
+  id: string;
+  label: string;
+  control: FieldControl;
+  inputType: string;
+  required: boolean;
+  readOnlyOnEdit: boolean;
+  step?: string;
+  options: ResolvedOption[];
+  parser: FieldParser;
+  min?: number;
+  max?: number;
+  pattern?: string;
+};
+
+type CompiledEntity = {
+  key: EntityKey;
+  primaryKeyFields: string[];
+  foreignKeys: NonNullable<RawEntity['foreignKeys']>;
+  foreignKeyDependencies: NonNullable<RawEntity['foreignKeyDependencies']>;
+  rowActions: Array<{
+    key: string;
+    kind: 'openEntityFromField';
+    targetField: string;
+  }>;
+  ui: {
+    singular: string;
+    plural: string;
+    add: string;
+    edit: string;
+    update: string;
+    cancel: string;
+    actions: string;
+  };
+  tableFields: CompiledField[];
+  formFields: CompiledField[];
+};
+
+const ENTITY_SCHEMA: { entities: Record<string, RawEntity> } = { entities: {} };
+
+type EntityKey = string;
+type EntityRecord = Record<string, any>;
+
+type EntityDOM = {
+  navButton: HTMLButtonElement;
+  section: HTMLElement;
+  addButton: HTMLButtonElement;
+  formContainer: HTMLElement;
+  tableWrap: HTMLElement;
+  tableBody: HTMLTableSectionElement;
+};
+
+const loadedEntityKeys: EntityKey[] = [];
+const entityDomElements = {} as Record<EntityKey, EntityDOM>;
+
+function formatLocaleText(label: LocaleText): string {
+  return `${label.es} / ${label.en}`;
 }
 
-const structure = {
-  tables: {
-    students: {
-      columns:{
-        numero_libreta   :{type: 'string', label: "Número de Libreta / Student ID:"},
-        dni              :{type: 'string'},
-        first_name       :{type: 'string'},
-        last_name        :{type: 'string'},
-        email            :{type: 'string'},
-        enrollment_date  :{type: 'string'},
-        status           :{type: 'string'},
-      },
-      pk: 'numero_libreta',
-      uiName: 'Student'
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value);
+}
+
+function actionLabel(action: string): string {
+  const label = UI_ACTIONS.actionLabels[action];
+  return label ? formatLocaleText(label) : action;
+}
+
+function formatMessage(message: MessageKey, params?: { value?: number }): string {
+  const base = I18N.messages[message];
+  if (params?.value === undefined) {
+    return formatLocaleText(base);
+  }
+  return `${base.es} ${params.value} / ${base.en} ${params.value}`;
+}
+
+function normalizeField(raw: RawFieldSpec): RawFieldObject {
+  return raw === true ? {} : raw;
+}
+
+function resolveLabel(fieldId: string, raw: RawFieldObject): string {
+  const labelKey = raw.labelKey || fieldId;
+  const label = UI_METADATA.fieldLabels[labelKey];
+  return label ? formatLocaleText(label) : fieldId;
+}
+
+function resolveControl(raw: RawFieldObject): FieldControl {
+  if (raw.control) {
+    return raw.control;
+  }
+  return raw.optionsKey ? 'select' : 'input';
+}
+
+function resolveParser(raw: RawFieldObject): FieldParser {
+  if (raw.parser) {
+    return raw.parser;
+  }
+
+  if (raw.control === 'checkbox') {
+    return 'boolean';
+  }
+
+  return raw.inputType === 'number' ? 'floatOrNull' : 'string';
+}
+
+function resolveOptions(raw: RawFieldObject): ResolvedOption[] {
+  if (!raw.optionsKey) {
+    return [];
+  }
+  const options = UI_METADATA.optionSets[raw.optionsKey] || [];
+  return options.map(option => ({
+    value: option.value,
+    label: formatLocaleText(option.label),
+  }));
+}
+
+function compileField(fieldId: string, rawSpec: RawFieldSpec): CompiledField {
+  const raw = normalizeField(rawSpec);
+  return {
+    id: fieldId,
+    label: resolveLabel(fieldId, raw),
+    control: resolveControl(raw),
+    inputType: raw.inputType || 'text',
+    required: !!raw.required,
+    readOnlyOnEdit: !!raw.readOnlyOnEdit,
+    step: raw.step,
+    options: resolveOptions(raw),
+    parser: resolveParser(raw),
+    min: raw.min,
+    max: raw.max,
+    pattern: raw.pattern,
+  };
+}
+
+function buildFieldMarkup(field: CompiledField, value: string, required: string, readOnly: string): string {
+  const escapedFieldId = escapeAttribute(field.id);
+  const escapedLabel = escapeHtml(field.label);
+  const escapedValue = escapeAttribute(value);
+
+  if (field.control === 'select') {
+    const options = field.options.map(option => {
+      const selected = option.value === value ? 'selected' : '';
+      return `<option value="${escapeAttribute(option.value)}" ${selected}>${escapeHtml(option.label)}</option>`;
+    }).join('');
+
+    return `
+      <div class="form-group">
+        <label for="${escapedFieldId}">${escapedLabel}:</label>
+        <select id="${escapedFieldId}" ${required}>${options}</select>
+      </div>
+    `;
+  }
+
+  if (field.control === 'textarea') {
+    return `
+      <div class="form-group">
+        <label for="${escapedFieldId}">${escapedLabel}:</label>
+        <textarea id="${escapedFieldId}" ${required}>${escapeHtml(value)}</textarea>
+      </div>
+    `;
+  }
+
+  if (field.control === 'checkbox') {
+    const checked = value === 'true' ? 'checked' : '';
+    return `
+      <div class="form-group checkbox-group">
+        <label for="${escapedFieldId}">
+          <input type="checkbox" id="${escapedFieldId}" ${checked} ${readOnly}>
+          ${escapedLabel}
+        </label>
+      </div>
+    `;
+  }
+
+  const step = field.step ? `step="${escapeAttribute(field.step)}"` : '';
+  const min = field.min !== undefined ? `min="${field.min}"` : '';
+  const max = field.max !== undefined ? `max="${field.max}"` : '';
+
+  return `
+    <div class="form-group">
+      <label for="${escapedFieldId}">${escapedLabel}:</label>
+      <input type="${escapeAttribute(field.inputType)}" id="${escapedFieldId}" value="${escapedValue}" ${step} ${min} ${max} ${required} ${readOnly}>
+    </div>
+  `;
+}
+
+function compileEntity(entity: EntityKey): CompiledEntity {
+  const raw: RawEntity = ENTITY_SCHEMA.entities[entity];
+  const primaryKeyFields = Array.isArray(raw.primaryKeyFields) ? raw.primaryKeyFields : [];
+
+  const ordered = raw.fieldOrder || Object.keys(raw.fields);
+  const orderedForm = raw.formOrder || ordered;
+
+  const tableIds = ordered.filter((fieldId: string) => normalizeField(raw.fields[fieldId]).showInTable !== false);
+  const formIds = orderedForm.filter((fieldId: string) => normalizeField(raw.fields[fieldId]).showInForm !== false);
+
+  const fieldsById = Object.keys(raw.fields).reduce((acc, fieldId) => {
+    acc[fieldId] = compileField(fieldId, raw.fields[fieldId]);
+    return acc;
+  }, {} as Record<string, CompiledField>);
+
+  const singular = formatLocaleText(raw.names.singular);
+  const plural = formatLocaleText(raw.names.plural);
+
+  return {
+    key: entity,
+    primaryKeyFields,
+    foreignKeys: raw.foreignKeys || [],
+    foreignKeyDependencies: raw.foreignKeyDependencies || [],
+    rowActions: raw.rowActions || [],
+    ui: {
+      singular,
+      plural,
+      add: `${actionLabel('add')} ${singular}`,
+      edit: `${actionLabel('edit')} ${singular}`,
+      update: actionLabel('update'),
+      cancel: actionLabel('cancel'),
+      actions: actionLabel('actions'),
     },
-    subject: {
-      columns:{
-        cod_mat     :{type: 'string'},
-        name        :{type: 'string'},
-        description :{type: 'string'},
-        credits     :{type: 'string'},
-        department  :{type: 'string'},
+    tableFields: tableIds.map((fieldId: string) => fieldsById[fieldId]),
+    formFields: formIds.map((fieldId: string) => fieldsById[fieldId]),
+  };
+}
+
+const COMPILED_ENTITIES = {} as Record<EntityKey, CompiledEntity>;
+
+async function loadSchemaFromBackend() {
+  const response = await fetch(`${API_BASE}/meta`);
+  if (!response.ok) {
+    throw new Error(`Unable to load schema metadata (HTTP ${response.status})`);
+  }
+
+  const payload = await response.json();
+  if (!payload || typeof payload !== 'object' || !payload.entities || !payload.i18n) {
+    throw new Error('Invalid metadata payload');
+  }
+
+  UI_METADATA.fieldLabels = payload.i18n.fieldLabels || {};
+  UI_METADATA.optionSets = payload.i18n.optionSets || {};
+  UI_METADATA.foreignKeyOptionRowsByField = payload.i18n.foreignKeyOptionRowsByField || {};
+  const payloadMessages = payload.i18n.messages || {};
+  (Object.keys(I18N.messages) as MessageKey[]).forEach(messageKey => {
+    const message = payloadMessages[messageKey];
+    if (!message) {
+      return;
+    }
+
+    I18N.messages[messageKey] = {
+      es: String(message.es || I18N.messages[messageKey].es),
+      en: String(message.en || I18N.messages[messageKey].en),
+    };
+  });
+
+  UI_NAVIGATION.groups = (payload.navigation?.groups || [])
+    .filter((group: any) => group && typeof group.key === 'string' && group.label && Array.isArray(group.entities))
+    .map((group: any) => ({
+      key: String(group.key),
+      label: {
+        es: String(group.label.es || group.key),
+        en: String(group.label.en || group.key),
       },
-      pk: 'cod_mat',
-      uiName: 'Subject'
+      entities: group.entities.map((entity: any) => String(entity)),
+    }));
+
+  const uiActionsOptions = payload.i18n.optionSets?.uiActions || [];
+  UI_ACTIONS.actionLabels = Object.fromEntries(
+    uiActionsOptions.map((option: any) => [
+      String(option.value),
+      {
+        es: String(option.label.es || option.value),
+        en: String(option.label.en || option.value),
+      },
+    ])
+  );
+
+  ENTITY_SCHEMA.entities = payload.entities;
+}
+
+function initializeCompiledSchema() {
+  const allEntityKeys = Object.keys(ENTITY_SCHEMA.entities);
+  const orderedFromGroups = UI_NAVIGATION.groups.flatMap(group => group.entities).filter((entity, index, arr) => arr.indexOf(entity) === index);
+  const finalOrder = orderedFromGroups.concat(allEntityKeys.filter(entity => !orderedFromGroups.includes(entity)));
+  loadedEntityKeys.splice(0, loadedEntityKeys.length, ...finalOrder);
+
+  Object.keys(COMPILED_ENTITIES).forEach(key => {
+    delete COMPILED_ENTITIES[key];
+  });
+
+  loadedEntityKeys.forEach(entity => {
+    COMPILED_ENTITIES[entity] = compileEntity(entity);
+  });
+}
+
+function getRecordValue(record: EntityRecord | undefined, fieldId: string): string {
+  if (!record || record[fieldId] === null || record[fieldId] === undefined) {
+    return '';
+  }
+  return String(record[fieldId]);
+}
+
+function getTodayDateInputValue(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeDateInputValue(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  const trimmed = value.trim();
+  const yyyyMmDdMatch = trimmed.match(/^\d{4}-\d{2}-\d{2}$/);
+  if (yyyyMmDdMatch) {
+    return trimmed;
+  }
+
+  const isoPrefixMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoPrefixMatch) {
+    return isoPrefixMatch[1];
+  }
+
+  // Keep non-empty unknown formats untouched so validator can reject them explicitly.
+  return trimmed;
+}
+
+function isValidDateInputValue(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const [year, month, day] = value.split('-').map(part => parseInt(part, 10));
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return candidate.getUTCFullYear() === year
+    && candidate.getUTCMonth() === month - 1
+    && candidate.getUTCDate() === day;
+}
+
+function buildEntityUrl(entity: EntityKey, primaryKeyValues?: string[]): string {
+  const base = `${API_BASE}/${entity}`;
+  if (!primaryKeyValues || primaryKeyValues.length === 0) {
+    return base;
+  }
+
+  const token = encodeURIComponent(JSON.stringify(primaryKeyValues.map(value => String(value))));
+  return `${base}?pk=${token}`;
+}
+
+function getPrimaryKeyValues(record: EntityRecord, entity: EntityKey): string[] {
+  const primaryKeyFields = COMPILED_ENTITIES[entity]?.primaryKeyFields || [];
+  return primaryKeyFields.map(primaryKeyField => String(record[primaryKeyField] ?? ''));
+}
+
+function buildPrimaryKeyToken(record: EntityRecord, entity: EntityKey): string {
+  return encodeURIComponent(JSON.stringify(getPrimaryKeyValues(record, entity)));
+}
+
+function parseFieldValue(field: CompiledField, rawValue: string): any {
+  if (field.inputType === 'date') {
+    const normalized = normalizeDateInputValue(rawValue);
+    return normalized === '' ? null : normalized;
+  }
+
+  switch (field.parser) {
+    case 'int':
+      return parseInt(rawValue, 10) || 0;
+    case 'intOrNull': {
+      const parsed = parseInt(rawValue, 10);
+      return Number.isNaN(parsed) ? null : parsed;
     }
+    case 'float':
+      return parseFloat(rawValue) || 0;
+    case 'floatOrNull': {
+      const parsed = parseFloat(rawValue);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    case 'boolean':
+      return rawValue === 'true';
+    default:
+      return rawValue;
   }
 }
 
-// Type definitions
-interface Student {
-  numero_libreta: string;
-  dni: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  enrollment_date: string;
-  status: string;
+function buildPayloadFromForm(entity: EntityKey, container: HTMLElement): EntityRecord {
+  const payload: EntityRecord = {};
+  COMPILED_ENTITIES[entity].formFields.forEach(field => {
+    const element = container.querySelector(`#${CSS.escape(field.id)}`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+    if (!element) {
+      return;
+    }
+
+    const rawValue = field.control === 'checkbox'
+      ? String((element as HTMLInputElement).checked)
+      : field.inputType === 'date'
+        ? normalizeDateInputValue(element.value)
+        : element.value;
+    payload[field.id] = parseFieldValue(field, rawValue);
+  });
+  return payload;
 }
 
-interface Subject {
-  cod_mat: string;
-  name: string;
-  description: string;
-  credits: number;
-  department: string;
+function validatePayload(entity: EntityKey, payload: EntityRecord): string[] {
+  const errors: string[] = [];
+
+  COMPILED_ENTITIES[entity].formFields.forEach(field => {
+    const value = payload[field.id];
+    const isEmpty = value === '' || value === null || value === undefined;
+
+    if (field.required && isEmpty) {
+      errors.push(`${field.label}: ${formatMessage('required')}`);
+      return;
+    }
+
+    if (isEmpty) {
+      return;
+    }
+
+    if (typeof value === 'number') {
+      if (field.min !== undefined && value < field.min) {
+        errors.push(`${field.label}: ${formatMessage('mustBeAtLeast', { value: field.min })}`);
+      }
+      if (field.max !== undefined && value > field.max) {
+        errors.push(`${field.label}: ${formatMessage('mustBeAtMost', { value: field.max })}`);
+      }
+    }
+
+    if (field.pattern) {
+      const regex = new RegExp(field.pattern);
+      if (!regex.test(String(value))) {
+        errors.push(`${field.label}: ${formatMessage('invalidFormat')}`);
+      }
+    }
+
+    if (field.inputType === 'date' && !isValidDateInputValue(String(value))) {
+      errors.push(`${field.label}: ${formatMessage('invalidFormat')}`);
+    }
+  });
+
+  return errors;
 }
 
-interface Enrollment {
-  numero_libreta: string;
-  cod_mat: string;
-  enrollment_date: string;
-  grade: number;
-  status: string;
-  first_name?: string;
-  last_name?: string;
-  subject_name?: string;
+async function fetchJson(url: string, init?: RequestInit): Promise<any> {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    return null;
+  }
+
+  return response.json();
 }
 
-// DOM elements
-const studentsBtn = document.getElementById('students-btn') as HTMLButtonElement;
-const subjectsBtn = document.getElementById('subjects-btn') as HTMLButtonElement;
-const enrollmentsBtn = document.getElementById('enrollments-btn') as HTMLButtonElement;
+function resolveFormFieldValue(field: CompiledField, record: EntityRecord | undefined, isEdit: boolean): string {
+  if (field.control === 'checkbox') {
+    return String(record ? Boolean(record[field.id]) : false);
+  }
 
-const studentsSection = document.getElementById('students-section') as HTMLElement;
-const subjectsSection = document.getElementById('subjects-section') as HTMLElement;
-const enrollmentsSection = document.getElementById('enrollments-section') as HTMLElement;
+  const rawValue = getRecordValue(record, field.id);
+  const normalizedValue = field.inputType === 'date' ? normalizeDateInputValue(rawValue) : rawValue;
 
-const addStudentBtn = document.getElementById('add-student-btn') as HTMLButtonElement;
-const addSubjectBtn = document.getElementById('add-subject-btn') as HTMLButtonElement;
-const addEnrollmentBtn = document.getElementById('add-enrollment-btn') as HTMLButtonElement;
+  if (normalizedValue) {
+    return normalizedValue;
+  }
 
-const studentsForm = document.getElementById('students-form') as HTMLElement;
-const subjectsForm = document.getElementById('subjects-form') as HTMLElement;
-const enrollmentsForm = document.getElementById('enrollments-form') as HTMLElement;
+  if (!isEdit && field.inputType === 'date') {
+    return getTodayDateInputValue();
+  }
 
-const studentsTable = document.getElementById('students-table') as HTMLTableElement;
-const subjectsTable = document.getElementById('subjects-table') as HTMLTableElement;
-const enrollmentsTable = document.getElementById('enrollments-table') as HTMLTableElement;
+  return '';
+}
 
-// Navigation
-studentsBtn.addEventListener('click', () => showSection('students'));
-subjectsBtn.addEventListener('click', () => showSection('subjects'));
-enrollmentsBtn.addEventListener('click', () => showSection('enrollments'));
+function buildFormFields(entity: EntityKey, record: EntityRecord | undefined, isEdit: boolean): string {
+  return COMPILED_ENTITIES[entity].formFields.map(field => buildFieldMarkup(
+    field,
+    resolveFormFieldValue(field, record, isEdit),
+    field.required ? 'required' : '',
+    field.readOnlyOnEdit && isEdit ? 'readonly' : ''
+  )).join('');
+}
 
-function showSection(section: string) {
-  // Hide all sections
-  studentsSection.classList.remove('active');
-  subjectsSection.classList.remove('active');
-  enrollmentsSection.classList.remove('active');
+function applyFormFieldValues(entity: EntityKey, container: HTMLElement, record: EntityRecord | undefined, isEdit: boolean) {
+  COMPILED_ENTITIES[entity].formFields.forEach(field => {
+    const element = Array.from(container.querySelectorAll<HTMLElement>('[id]')).find(candidate => candidate.id === field.id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | undefined;
+    if (!element) {
+      return;
+    }
 
-  // Remove active class from buttons
-  studentsBtn.classList.remove('active');
-  subjectsBtn.classList.remove('active');
-  enrollmentsBtn.classList.remove('active');
+    if (field.control === 'checkbox') {
+      (element as HTMLInputElement).checked = resolveFormFieldValue(field, record, isEdit) === 'true';
+    } else {
+      element.value = resolveFormFieldValue(field, record, isEdit);
+    }
+  });
+}
 
-  // Show selected section
-  switch (section) {
-    case 'students':
-      studentsSection.classList.add('active');
-      studentsBtn.classList.add('active');
-      loadStudents();
-      break;
-    case 'subjects':
-      subjectsSection.classList.add('active');
-      subjectsBtn.classList.add('active');
-      loadSubjects();
-      break;
-    case 'enrollments':
-      enrollmentsSection.classList.add('active');
-      enrollmentsBtn.classList.add('active');
-      loadEnrollments();
-      break;
+function setSelectOptions(selectElement: HTMLSelectElement, options: ResolvedOption[], selectedValue: string) {
+  const hasSelectedOption = options.some(option => option.value === selectedValue);
+  const initialOption = '<option value=""></option>';
+  const renderedOptions = options.map(option => {
+    const selected = option.value === selectedValue ? 'selected' : '';
+    return `<option value="${escapeAttribute(option.value)}" ${selected}>${escapeHtml(option.label)}</option>`;
+  }).join('');
+
+  selectElement.innerHTML = `${initialOption}${renderedOptions}`;
+  if (!hasSelectedOption) {
+    selectElement.value = '';
   }
 }
 
-// Load data functions
-async function loadStudents() {
-  try {
-    const response = await fetch(`${API_BASE}/students`);
-    const students: Student[] = await response.json();
-    renderStudentsTable(students);
-  } catch (error) {
-    console.error('Error loading students:', error);
+function deduplicateOptions(options: ResolvedOption[]): ResolvedOption[] {
+  const seen = new Set<string>();
+  const result: ResolvedOption[] = [];
+  for (const option of options) {
+    if (seen.has(option.value)) {
+      continue;
+    }
+    seen.add(option.value);
+    result.push(option);
   }
+  return result;
 }
 
-async function loadSubjects() {
-  try {
-    const response = await fetch(`${API_BASE}/subjects`);
-    const subjects: Subject[] = await response.json();
-    renderSubjectsTable(subjects);
-  } catch (error) {
-    console.error('Error loading subjects:', error);
-  }
+function enableDependentForeignKeyFiltering(entity: EntityKey, container: HTMLElement) {
+  const compiled = COMPILED_ENTITIES[entity];
+  const foreignKeysByKey = new Map(
+    compiled.foreignKeys.map(foreignKey => [foreignKey.foreignKeyKey, foreignKey])
+  );
+
+  const bestForeignKeyByField = new Map<string, { foreignKeyKey: string; columnsCount: number }>();
+  compiled.foreignKeys.forEach(foreignKey => {
+    const columnsCount = foreignKey.columns.length;
+    foreignKey.columns.forEach(column => {
+      const existing = bestForeignKeyByField.get(column.columnName);
+      if (!existing || columnsCount < existing.columnsCount) {
+        bestForeignKeyByField.set(column.columnName, {
+          foreignKeyKey: foreignKey.foreignKeyKey,
+          columnsCount,
+        });
+      }
+    });
+  });
+
+  const fieldToForeignKey = new Map<string, { foreignKeyKey: string }>();
+  bestForeignKeyByField.forEach((value, fieldId) => {
+    fieldToForeignKey.set(fieldId, { foreignKeyKey: value.foreignKeyKey });
+  });
+
+  const dependencyByChildForeignKey = new Map(
+    compiled.foreignKeyDependencies.map(dependency => [dependency.dependentForeignKeyKey, dependency])
+  );
+
+  const resolveFilteredOptions = (fieldId: string): { options: ResolvedOption[]; disabled: boolean } => {
+    const fieldKey = `${entity}.${fieldId}`;
+    const rawOptions = UI_METADATA.foreignKeyOptionRowsByField[fieldKey];
+    const fallbackOptions = COMPILED_ENTITIES[entity].formFields.find(field => field.id === fieldId)?.options || [];
+    const fieldForeignKey = fieldToForeignKey.get(fieldId);
+
+    if (!rawOptions || !fieldForeignKey) {
+      return { options: deduplicateOptions(fallbackOptions), disabled: false };
+    }
+
+    const dependency = dependencyByChildForeignKey.get(fieldForeignKey.foreignKeyKey);
+    if (!dependency) {
+      return {
+        options: deduplicateOptions(rawOptions.map(option => ({ value: option.value, label: formatLocaleText(option.label) }))),
+        disabled: false,
+      };
+    }
+
+    const requiredForeignKey = foreignKeysByKey.get(dependency.requiredForeignKeyKey);
+    const dependentForeignKey = foreignKeysByKey.get(dependency.dependentForeignKeyKey);
+    if (!requiredForeignKey || !dependentForeignKey) {
+      return {
+        options: deduplicateOptions(rawOptions.map(option => ({ value: option.value, label: formatLocaleText(option.label) }))),
+        disabled: false,
+      };
+    }
+
+    const requiredSelectionsByLocalColumn = new Map<string, string>();
+    for (const requiredColumn of requiredForeignKey.columns) {
+      const requiredElement = container.querySelector(`#${CSS.escape(requiredColumn.columnName)}`) as HTMLSelectElement | null;
+      requiredSelectionsByLocalColumn.set(requiredColumn.columnName, requiredElement?.value || '');
+    }
+
+    if (dependency.mappings.some(mapping => !requiredSelectionsByLocalColumn.get(mapping.sharedLocalColumnName))) {
+      return { options: [], disabled: true };
+    }
+
+    const dependentReferencedByLocalColumn = new Map(
+      dependentForeignKey.columns.map(column => [column.columnName, column.referencedColumnName])
+    );
+
+    const filtered = rawOptions.filter(option => dependency.mappings.every(mapping => {
+      const dependentReferencedColumn = dependentReferencedByLocalColumn.get(mapping.sharedLocalColumnName);
+      if (!dependentReferencedColumn) {
+        return false;
+      }
+      const requiredSelectedValue = requiredSelectionsByLocalColumn.get(mapping.sharedLocalColumnName) || '';
+      return option.referencedValues[dependentReferencedColumn] === requiredSelectedValue;
+    }));
+
+    return {
+      options: deduplicateOptions(filtered.map(option => ({ value: option.value, label: formatLocaleText(option.label) }))),
+      disabled: false,
+    };
+  };
+
+  const refreshForeignKeySelects = () => {
+    COMPILED_ENTITIES[entity].formFields
+      .filter(field => field.control === 'select')
+      .forEach(field => {
+        const selectElement = container.querySelector(`#${CSS.escape(field.id)}`) as HTMLSelectElement | null;
+        if (!selectElement) {
+          return;
+        }
+
+        const selectedValue = selectElement.value;
+        const { options, disabled } = resolveFilteredOptions(field.id);
+        setSelectOptions(selectElement, options, selectedValue);
+        selectElement.disabled = disabled;
+      });
+  };
+
+  COMPILED_ENTITIES[entity].formFields
+    .filter(field => field.control === 'select')
+    .forEach(field => {
+      const selectElement = container.querySelector(`#${CSS.escape(field.id)}`) as HTMLSelectElement | null;
+      if (!selectElement) {
+        return;
+      }
+
+      selectElement.addEventListener('change', refreshForeignKeySelects);
+    });
+
+  refreshForeignKeySelects();
 }
 
-async function loadEnrollments() {
-  try {
-    const response = await fetch(`${API_BASE}/enrollments`);
-    const enrollments: Enrollment[] = await response.json();
-    renderEnrollmentsTable(enrollments);
-  } catch (error) {
-    console.error('Error loading enrollments:', error);
+function formatCellValue(field: CompiledField, value: any): string {
+  if (value === null || value === undefined) {
+    return '';
   }
+
+  if (field.control === 'checkbox' || typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+
+  return String(value);
 }
 
-function renderAnyTable(tableElement: HTMLTableElement, tableStructure: TableStructure, records: Record<string, any>[]){
-  const tbody = tableElement.querySelector('tbody')!;
-  tbody.innerHTML = '';
+function buildFormTemplate(entity: EntityKey, record: EntityRecord | undefined, isEdit: boolean): string {
+  const ui = COMPILED_ENTITIES[entity].ui;
+  return `
+    <form>
+      <h3>${escapeHtml(isEdit ? ui.edit : ui.add)}</h3>
+      ${buildFormFields(entity, record, isEdit)}
+      <div class="form-actions">
+        <button type="submit">${escapeHtml(isEdit ? ui.update : ui.add)}</button>
+        <button type="button" class="cancel-btn" data-action="cancel">${escapeHtml(ui.cancel)}</button>
+      </div>
+    </form>
+  `;
+}
 
-  records.forEach(record => {
-    const {pk, uiName} = tableStructure;
-    const pkValue = encodeURIComponent(record[pk]);
-    const row = document.createElement('tr');
-    row.innerHTML = 
-      Object.entries(tableStructure.columns).map(([name]) => `<td>${record[name] || ''}</td>`).join('')
-      +
-    `
+function renderTableRow(entity: EntityKey, record: EntityRecord): string {
+  const cells = COMPILED_ENTITIES[entity].tableFields.map(field => `<td>${escapeHtml(formatCellValue(field, record[field.id]))}</td>`).join('');
+  const primaryKeyToken = buildPrimaryKeyToken(record, entity);
+  const rowActions = COMPILED_ENTITIES[entity].rowActions
+    .map(action => {
+      const targetEntity = String(record[action.targetField] ?? '');
+      if (!targetEntity || !COMPILED_ENTITIES[targetEntity]) {
+        return '';
+      }
+
+      return `<button class="row-action-btn" data-action="${escapeAttribute(action.key)}" data-behavior="${escapeAttribute(action.kind)}" data-target-entity="${escapeAttribute(targetEntity)}">${escapeHtml(actionLabel(action.key))}</button>`;
+    })
+    .join('');
+
+  return `
+    <tr>
+      ${cells}
       <td class="actions">
-        <button class="edit-btn" onclick="edit${uiName}('${pkValue}')">Editar / Edit</button>
-        <button class="delete-btn" onclick="delete${uiName}('${pkValue}')">Eliminar / Delete</button>
+        ${rowActions}
+        <button class="edit-btn" data-action="edit" data-pk="${escapeAttribute(primaryKeyToken)}">${escapeHtml(actionLabel('edit'))}</button>
+        <button class="delete-btn" data-action="delete" data-pk="${escapeAttribute(primaryKeyToken)}">${escapeHtml(actionLabel('delete'))}</button>
       </td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-// Render table functions
-function renderStudentsTable(students: Student[]) {
-  return renderAnyTable(studentsTable, structure.tables.students, students);
-}
-
-function renderSubjectsTable(subjects: Subject[]) {
-  return renderAnyTable(subjectsTable, structure.tables.subject, subjects);
-}
-
-function renderEnrollmentsTable(enrollments: Enrollment[]) {
-  const tbody = enrollmentsTable.querySelector('tbody')!;
-  tbody.innerHTML = '';
-
-  enrollments.forEach(enrollment => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${enrollment.numero_libreta}</td>
-      <td>${enrollment.first_name} ${enrollment.last_name}</td>
-      <td>${enrollment.cod_mat}</td>
-      <td>${enrollment.subject_name}</td>
-      <td>${enrollment.enrollment_date}</td>
-      <td>${enrollment.grade || ''}</td>
-      <td>${enrollment.status || ''}</td>
-      <td class="actions">
-        <button class="edit-btn" onclick="editEnrollment('${enrollment.numero_libreta}', '${enrollment.cod_mat}')">Editar / Edit</button>
-        <button class="delete-btn" onclick="deleteEnrollment('${enrollment.numero_libreta}', '${enrollment.cod_mat}')">Eliminar / Delete</button>
-      </td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-// Form functions
-addStudentBtn.addEventListener('click', () => showStudentForm());
-addSubjectBtn.addEventListener('click', () => showSubjectForm());
-addEnrollmentBtn.addEventListener('click', () => showEnrollmentForm());
-
-function showStudentForm(student?: Student) {
-  const isEdit = !!student;
-  studentsForm.innerHTML = `
-    <form id="student-form">
-      <h3>${isEdit ? 'Editar Alumno / Edit Student' : 'Agregar Alumno / Add Student'}</h3>
-      <div class="form-group">
-        <label for="numero_libreta">Número de Libreta / Student ID:</label>
-        <input type="text" id="numero_libreta" value="${student?.numero_libreta || ''}" ${isEdit ? 'readonly' : ''} required>
-      </div>
-      <div class="form-group">
-        <label for="dni">DNI / ID Number:</label>
-        <input type="text" id="dni" value="${student?.dni || ''}" required>
-      </div>
-      <div class="form-group">
-        <label for="first_name">Nombre / First Name:</label>
-        <input type="text" id="first_name" value="${student?.first_name || ''}" required>
-      </div>
-      <div class="form-group">
-        <label for="last_name">Apellido / Last Name:</label>
-        <input type="text" id="last_name" value="${student?.last_name || ''}" required>
-      </div>
-      <div class="form-group">
-        <label for="email">Email:</label>
-        <input type="email" id="email" value="${student?.email || ''}">
-      </div>
-      <div class="form-group">
-        <label for="enrollment_date">Fecha de Inscripción / Enrollment Date:</label>
-        <input type="date" id="enrollment_date" value="${student?.enrollment_date || ''}">
-      </div>
-      <div class="form-group">
-        <label for="status">Estado / Status:</label>
-        <select id="status">
-          <option value="active" ${student?.status === 'active' ? 'selected' : ''}>Activo / Active</option>
-          <option value="graduated" ${student?.status === 'graduated' ? 'selected' : ''}>Graduado / Graduated</option>
-          <option value="interrupted" ${student?.status === 'interrupted' ? 'selected' : ''}>Interrumpido / Interrupted</option>
-        </select>
-      </div>
-      <div class="form-actions">
-        <button type="submit">${isEdit ? 'Actualizar / Update' : 'Agregar / Add'}</button>
-        <button type="button" class="cancel-btn" onclick="hideStudentForm()">Cancelar / Cancel</button>
-      </div>
-    </form>
+    </tr>
   `;
+}
 
-  studentsForm.style.display = 'block';
+function renderEntityTable(entity: EntityKey, records: EntityRecord[]) {
+  entityDomElements[entity].tableBody.innerHTML = records.map(record => renderTableRow(entity, record)).join('');
+}
 
-  const form = document.getElementById('student-form') as HTMLFormElement;
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(form);
-    const studentData = {
-      numero_libreta: (document.getElementById('numero_libreta') as HTMLInputElement).value,
-      dni: (document.getElementById('dni') as HTMLInputElement).value,
-      first_name: (document.getElementById('first_name') as HTMLInputElement).value,
-      last_name: (document.getElementById('last_name') as HTMLInputElement).value,
-      email: (document.getElementById('email') as HTMLInputElement).value,
-      enrollment_date: (document.getElementById('enrollment_date') as HTMLInputElement).value,
-      status: (document.getElementById('status') as HTMLSelectElement).value,
-    };
+async function loadEntity(entity: EntityKey) {
+  try {
+    const records = await fetchJson(buildEntityUrl(entity));
+    renderEntityTable(entity, records || []);
+  } catch (error) {
+    console.error(`Error loading ${entity}:`, error);
+  }
+}
+
+function hideForm(entity: EntityKey) {
+  entityDomElements[entity].formContainer.style.display = 'none';
+}
+
+function showForm(entity: EntityKey, record?: EntityRecord) {
+  const isEdit = !!record;
+  const originalPrimaryKeyValues = isEdit && record
+    ? COMPILED_ENTITIES[entity].primaryKeyFields.map(primaryKeyField => String(record[primaryKeyField] ?? ''))
+    : [];
+  const container = entityDomElements[entity].formContainer;
+  container.innerHTML = buildFormTemplate(entity, record, isEdit);
+  container.style.display = 'block';
+  applyFormFieldValues(entity, container, record, isEdit);
+  enableDependentForeignKeyFiltering(entity, container);
+
+  const form = container.querySelector('form') as HTMLFormElement;
+  const cancelButton = container.querySelector('[data-action="cancel"]') as HTMLButtonElement;
+
+  cancelButton.addEventListener('click', () => hideForm(entity));
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+
+    const payload = buildPayloadFromForm(entity, container);
+    const validationErrors = validatePayload(entity, payload);
+    if (validationErrors.length > 0) {
+      alert(`${formatMessage('validationErrors')}\n\n- ${validationErrors.join('\n- ')}`);
+      return;
+    }
+
+    const url = isEdit ? buildEntityUrl(entity, originalPrimaryKeyValues) : buildEntityUrl(entity);
 
     try {
-      if (isEdit) {
-        await fetch(`${API_BASE}/students/${studentData.numero_libreta}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(studentData),
-        });
-      } else {
-        await fetch(`${API_BASE}/students`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(studentData),
-        });
-      }
-      hideStudentForm();
-      loadStudents();
+      await fetchJson(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      hideForm(entity);
+      await loadEntity(entity);
     } catch (error) {
-      console.error('Error saving student:', error);
+      console.error(`Error saving ${entity}:`, error);
     }
   });
 }
 
-function hideStudentForm() {
-  studentsForm.style.display = 'none';
+function showSection(entity: EntityKey) {
+  loadedEntityKeys.forEach(key => {
+    entityDomElements[key].section.classList.remove('active');
+    entityDomElements[key].navButton.classList.remove('active');
+  });
+
+  entityDomElements[entity].section.classList.add('active');
+  entityDomElements[entity].navButton.classList.add('active');
+  loadEntity(entity);
 }
 
-function showSubjectForm(subject?: Subject) {
-  const isEdit = !!subject;
-  subjectsForm.innerHTML = `
-    <form id="subject-form">
-      <h3>${isEdit ? 'Editar Materia / Edit Subject' : 'Agregar Materia / Add Subject'}</h3>
-      <div class="form-group">
-        <label for="cod_mat">Código / Code:</label>
-        <input type="text" id="cod_mat" value="${subject?.cod_mat || ''}" ${isEdit ? 'readonly' : ''} required>
-      </div>
-      <div class="form-group">
-        <label for="name">Nombre / Name:</label>
-        <input type="text" id="name" value="${subject?.name || ''}" required>
-      </div>
-      <div class="form-group">
-        <label for="description">Descripción / Description:</label>
-        <textarea id="description">${subject?.description || ''}</textarea>
-      </div>
-      <div class="form-group">
-        <label for="credits">Créditos / Credits:</label>
-        <input type="number" id="credits" value="${subject?.credits || ''}">
-      </div>
-      <div class="form-group">
-        <label for="department">Departamento / Department:</label>
-        <input type="text" id="department" value="${subject?.department || ''}">
-      </div>
-      <div class="form-actions">
-        <button type="submit">${isEdit ? 'Actualizar / Update' : 'Agregar / Add'}</button>
-        <button type="button" class="cancel-btn" onclick="hideSubjectForm()">Cancelar / Cancel</button>
-      </div>
-    </form>
-  `;
+async function editEntity(entity: EntityKey, primaryKeyToken: string) {
+  try {
+    const record = await fetchJson(`${API_BASE}/${entity}?pk=${primaryKeyToken}`);
 
-  subjectsForm.style.display = 'block';
-
-  const form = document.getElementById('subject-form') as HTMLFormElement;
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const subjectData = {
-      cod_mat: (document.getElementById('cod_mat') as HTMLInputElement).value,
-      name: (document.getElementById('name') as HTMLInputElement).value,
-      description: (document.getElementById('description') as HTMLTextAreaElement).value,
-      credits: parseInt((document.getElementById('credits') as HTMLInputElement).value) || 0,
-      department: (document.getElementById('department') as HTMLInputElement).value,
-    };
-
-    try {
-      if (isEdit) {
-        await fetch(`${API_BASE}/subjects/${subjectData.cod_mat}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(subjectData),
-        });
-      } else {
-        await fetch(`${API_BASE}/subjects`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(subjectData),
-        });
-      }
-      hideSubjectForm();
-      loadSubjects();
-    } catch (error) {
-      console.error('Error saving subject:', error);
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      throw new Error('Invalid record payload');
     }
+
+    showForm(entity, record);
+  } catch (error) {
+    console.error(`Error loading ${entity} for edit:`, error);
+  }
+}
+
+async function deleteEntity(entity: EntityKey, primaryKeyToken: string) {
+  if (!confirm(formatMessage('deleteConfirm'))) {
+    return;
+  }
+
+  try {
+    await fetchJson(`${API_BASE}/${entity}?pk=${primaryKeyToken}`, { method: 'DELETE' });
+    await loadEntity(entity);
+  } catch (error) {
+    console.error(`Error deleting ${entity}:`, error);
+  }
+}
+
+function handleTableAction(entity: EntityKey, action: string, primaryKeyToken: string, targetEntity?: string, behavior?: string) {
+  if (behavior === 'openEntityFromField' && targetEntity) {
+    if (targetEntity && COMPILED_ENTITIES[targetEntity]) {
+      showSection(targetEntity);
+    }
+    return;
+  }
+
+  if (action === 'edit') {
+    editEntity(entity, primaryKeyToken);
+    return;
+  }
+
+  if (action === 'delete') {
+    deleteEntity(entity, primaryKeyToken);
+  }
+}
+
+function buildEntitySection(entity: EntityKey): HTMLElement {
+  const ui = COMPILED_ENTITIES[entity].ui;
+
+  const section = document.createElement('section');
+  section.className = 'section';
+
+  const title = document.createElement('h2');
+  title.textContent = ui.plural;
+
+  const addButton = document.createElement('button');
+  addButton.className = 'add-btn';
+  addButton.textContent = ui.add;
+
+  const formContainer = document.createElement('div');
+  formContainer.style.display = 'none';
+
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'table-wrap';
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+
+  COMPILED_ENTITIES[entity].tableFields.forEach(field => {
+    const th = document.createElement('th');
+    th.textContent = field.label;
+    headerRow.appendChild(th);
+  });
+
+  const actionsTh = document.createElement('th');
+  actionsTh.textContent = ui.actions;
+  headerRow.appendChild(actionsTh);
+
+  thead.appendChild(headerRow);
+
+  const tbody = document.createElement('tbody');
+  table.appendChild(thead);
+  table.appendChild(tbody);
+
+  section.appendChild(title);
+  section.appendChild(addButton);
+  section.appendChild(formContainer);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+
+  entityDomElements[entity] = {
+    navButton: document.createElement('button'),
+    section,
+    addButton,
+    formContainer,
+    tableWrap,
+    tableBody: tbody,
+  };
+
+  return section;
+}
+
+function bootstrapUI() {
+  const root = document.getElementById('app-root') as HTMLElement;
+  root.innerHTML = '';
+
+  const workspace = document.createElement('div');
+  workspace.className = 'workspace-layout';
+  root.appendChild(workspace);
+
+  const sidebar = document.createElement('aside');
+  sidebar.className = 'sidebar';
+  workspace.appendChild(sidebar);
+
+  const content = document.createElement('main');
+  content.className = 'content';
+  workspace.appendChild(content);
+
+  const nav = document.createElement('nav');
+  nav.className = 'nav';
+  sidebar.appendChild(nav);
+
+  const sectionsHost = document.createElement('div');
+  sectionsHost.className = 'sections-host';
+  content.appendChild(sectionsHost);
+
+  const groups = UI_NAVIGATION.groups;
+
+  loadedEntityKeys.forEach(entity => {
+    const section = buildEntitySection(entity);
+    sectionsHost.appendChild(section);
+
+    entityDomElements[entity].addButton.addEventListener('click', () => showForm(entity));
+
+    entityDomElements[entity].tableBody.addEventListener('click', event => {
+      const target = event.target as HTMLElement;
+      if (!(target instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      const action = target.dataset.action || '';
+      const primaryKeyToken = target.dataset.pk || '';
+      const targetEntity = target.dataset.targetEntity || '';
+      const behavior = target.dataset.behavior || '';
+      handleTableAction(entity, action, primaryKeyToken, targetEntity, behavior);
+    });
+  });
+
+  groups.forEach(group => {
+    const groupElement = document.createElement('details');
+    groupElement.className = 'nav-group';
+    groupElement.open = true;
+
+    const groupSummary = document.createElement('summary');
+    groupSummary.className = 'nav-group-title';
+    groupSummary.textContent = formatLocaleText(group.label);
+    groupElement.appendChild(groupSummary);
+
+    const groupItems = document.createElement('div');
+    groupItems.className = 'nav-group-items';
+
+    group.entities
+      .filter(entity => !!COMPILED_ENTITIES[entity])
+      .forEach(entity => {
+        const navButton = document.createElement('button');
+        navButton.textContent = COMPILED_ENTITIES[entity].ui.plural;
+        navButton.addEventListener('click', () => showSection(entity));
+        groupItems.appendChild(navButton);
+        entityDomElements[entity].navButton = navButton;
+      });
+
+    groupElement.appendChild(groupItems);
+    nav.appendChild(groupElement);
   });
 }
 
-function hideSubjectForm() {
-  subjectsForm.style.display = 'none';
-}
-
-function showEnrollmentForm(enrollment?: Enrollment) {
-  const isEdit = !!enrollment;
-  enrollmentsForm.innerHTML = `
-    <form id="enrollment-form">
-      <h3>${isEdit ? 'Editar Inscripción / Edit Enrollment' : 'Agregar Inscripción / Add Enrollment'}</h3>
-      <div class="form-group">
-        <label for="numero_libreta">Número de Libreta / Student ID:</label>
-        <input type="text" id="numero_libreta" value="${enrollment?.numero_libreta || ''}" ${isEdit ? 'readonly' : ''} required>
-      </div>
-      <div class="form-group">
-        <label for="cod_mat">Código de Materia / Subject Code:</label>
-        <input type="text" id="cod_mat" value="${enrollment?.cod_mat || ''}" ${isEdit ? 'readonly' : ''} required>
-      </div>
-      <div class="form-group">
-        <label for="enrollment_date">Fecha de Inscripción / Enrollment Date:</label>
-        <input type="date" id="enrollment_date" value="${enrollment?.enrollment_date || ''}" required>
-      </div>
-      <div class="form-group">
-        <label for="grade">Nota / Grade:</label>
-        <input type="number" id="grade" step="0.01" value="${enrollment?.grade || ''}">
-      </div>
-      <div class="form-group">
-        <label for="status">Estado / Status:</label>
-        <select id="status">
-          <option value="enrolled" ${enrollment?.status === 'enrolled' ? 'selected' : ''}>Inscrito / Enrolled</option>
-          <option value="completed" ${enrollment?.status === 'completed' ? 'selected' : ''}>Completado / Completed</option>
-          <option value="failed" ${enrollment?.status === 'failed' ? 'selected' : ''}>Fallido / Failed</option>
-        </select>
-      </div>
-      <div class="form-actions">
-        <button type="submit">${isEdit ? 'Actualizar / Update' : 'Agregar / Add'}</button>
-        <button type="button" class="cancel-btn" onclick="hideEnrollmentForm()">Cancelar / Cancel</button>
-      </div>
-    </form>
-  `;
-
-  enrollmentsForm.style.display = 'block';
-
-  const form = document.getElementById('enrollment-form') as HTMLFormElement;
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const enrollmentData = {
-      numero_libreta: (document.getElementById('numero_libreta') as HTMLInputElement).value,
-      cod_mat: (document.getElementById('cod_mat') as HTMLInputElement).value,
-      enrollment_date: (document.getElementById('enrollment_date') as HTMLInputElement).value,
-      grade: parseFloat((document.getElementById('grade') as HTMLInputElement).value) || null,
-      status: (document.getElementById('status') as HTMLSelectElement).value,
-    };
-
-    try {
-      if (isEdit) {
-        await fetch(`${API_BASE}/enrollments/${enrollmentData.numero_libreta}/${enrollmentData.cod_mat}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(enrollmentData),
-        });
-      } else {
-        await fetch(`${API_BASE}/enrollments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(enrollmentData),
-        });
-      }
-      hideEnrollmentForm();
-      loadEnrollments();
-    } catch (error) {
-      console.error('Error saving enrollment:', error);
-    }
-  });
-}
-
-function hideEnrollmentForm() {
-  enrollmentsForm.style.display = 'none';
-}
-
-// Global functions for onclick
-(window as any).editStudent = async (numero_libreta: string) => {
+async function initializeApp() {
   try {
-    const response = await fetch(`${API_BASE}/students/${numero_libreta}`);
-    const student: Student = await response.json();
-    showStudentForm(student);
-  } catch (error) {
-    console.error('Error loading student for edit:', error);
-  }
-};
+    await loadSchemaFromBackend();
+    initializeCompiledSchema();
+    bootstrapUI();
 
-(window as any).deleteStudent = async (numero_libreta: string) => {
-  if (confirm('¿Está seguro de que desea eliminar este alumno? / Are you sure you want to delete this student?')) {
-    try {
-      await fetch(`${API_BASE}/students/${numero_libreta}`, { method: 'DELETE' });
-      loadStudents();
-    } catch (error) {
-      console.error('Error deleting student:', error);
+    const landingEntity = loadedEntityKeys[0];
+    if (landingEntity) {
+      showSection(landingEntity);
     }
-  }
-};
-
-(window as any).editSubject = async (cod_mat: string) => {
-  try {
-    const response = await fetch(`${API_BASE}/subjects/${cod_mat}`);
-    const subject: Subject = await response.json();
-    showSubjectForm(subject);
   } catch (error) {
-    console.error('Error loading subject for edit:', error);
+    console.error('Failed to initialize app metadata:', error);
   }
-};
-
-(window as any).deleteSubject = async (cod_mat: string) => {
-  if (confirm('¿Está seguro de que desea eliminar esta materia? / Are you sure you want to delete this subject?')) {
-    try {
-      await fetch(`${API_BASE}/subjects/${cod_mat}`, { method: 'DELETE' });
-      loadSubjects();
-    } catch (error) {
-      console.error('Error deleting subject:', error);
-    }
-  }
-};
-
-(window as any).editEnrollment = async (numero_libreta: string, cod_mat: string) => {
-  try {
-    const response = await fetch(`${API_BASE}/enrollments/${numero_libreta}/${cod_mat}`);
-    const enrollment: Enrollment = await response.json();
-    showEnrollmentForm(enrollment);
-  } catch (error) {
-    console.error('Error loading enrollment for edit:', error);
-  }
-};
-
-(window as any).deleteEnrollment = async (numero_libreta: string, cod_mat: string) => {
-  if (confirm('¿Está seguro de que desea eliminar esta inscripción? / Are you sure you want to delete this enrollment?')) {
-    try {
-      await fetch(`${API_BASE}/enrollments/${numero_libreta}/${cod_mat}`, { method: 'DELETE' });
-      loadEnrollments();
-    } catch (error) {
-      console.error('Error deleting enrollment:', error);
-    }
-  }
-};
+}
 
 // Initialize
-showSection('students');
+initializeApp();

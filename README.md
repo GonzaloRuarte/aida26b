@@ -76,6 +76,72 @@ Este proyecto implementa un sistema de gestión académica para la Facultad de C
 4. Compilar: `npm run build` (compila backend y frontend)
 5. Ejecutar: `npm start` (servirá en http://localhost:3000)
 
+### Ejecucion con Docker Compose (recomendado)
+
+1. Copiar variables de entorno base:
+   ```bash
+   copy .env.example .env
+   ```
+2. Construir y levantar toda la app (PostgreSQL + backend + frontend servido por backend):
+   ```bash
+   docker compose up --build
+   ```
+3. Ejecutar en segundo plano (opcional):
+   ```bash
+   docker compose up --build -d
+   ```
+4. Detener servicios:
+   ```bash
+   docker compose down
+   ```
+5. Reinicializar base de datos desde cero (reaplica `schema.sql`):
+   ```bash
+   docker compose down -v
+   docker compose up --build
+   ```
+
+Si ya tenias un volumen existente y queres habilitar `ON UPDATE CASCADE` sin borrar datos:
+```bash
+Get-Content .\database\migrations\001_enrollments_on_update_cascade.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+```
+
+Si queres mover metadata de UI al schema de base de datos (labels, option sets y `enrollments_list`):
+```bash
+Get-Content .\database\migrations\002_db_driven_ui_metadata.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+```
+
+Si queres mover el registro de entidades, claves primarias, claves foraneas y ordenamiento al schema de base de datos:
+```bash
+Get-Content .\database\migrations\003_db_entity_registry.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+```
+
+Si queres mover las vistas de listado e indices a metadata de base de datos:
+```bash
+Get-Content .\database\migrations\004_db_list_views_and_indexes.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+```
+
+Si queres poblar dependencias de dropdown entre FKs (tablas `app_entity_foreign_key_dependencies` y `app_entity_foreign_key_dependency_mappings`) desde metadata ya existente:
+```bash
+Get-Content .\database\migrations\005_fill_foreign_key_dependencies.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\006_rename_fk_dependency_columns.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\007_enforce_metadata_labels_not_null.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\008_limit_structural_sync_triggers.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\009_metadata_hardening_data_types_and_index_order.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\010_pk_order_and_data_type_ui_profiles.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\011_namespaced_physical_indexes.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\012_ui_messages_and_option_set_definitions.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+```
+
+### Acceso Manual a la DB como Owner
+
+- El rol owner (`AIDA26_OWNER_USER`) no tiene password ni login.
+- Para tareas administrativas manuales, entrar al contenedor como superusuario postgres y cambiar de rol:
+  ```bash
+  docker compose exec db psql -U postgres -d faculty_management
+  SET ROLE aida26_owner;
+  ```
+- El backend se conecta con el rol de aplicacion (`AIDA26_APP_USER` + `AIDA26_APP_PASSWORD`).
+
 ## Uso
 
 1. Ejecutar el backend: `npm start` en el directorio backend (servirá en http://localhost:3000)
@@ -86,26 +152,38 @@ Este proyecto implementa un sistema de gestión académica para la Facultad de C
 
 ## API Endpoints
 
-### Alumnos
-- `GET /api/students` - Listar todos los alumnos
-- `GET /api/students/:numero_libreta` - Obtener alumno específico
-- `POST /api/students` - Crear nuevo alumno
-- `PUT /api/students/:numero_libreta` - Actualizar alumno
-- `DELETE /api/students/:numero_libreta` - Eliminar alumno
+### CRUD Generico por Entidad
 
-### Materias
-- `GET /api/subjects` - Listar todas las materias
-- `GET /api/subjects/:cod_mat` - Obtener materia específica
-- `POST /api/subjects` - Crear nueva materia
-- `PUT /api/subjects/:cod_mat` - Actualizar materia
-- `DELETE /api/subjects/:cod_mat` - Eliminar materia
+- `GET /api/meta` - Obtener metadata para frontend (labels, option sets, entidades, campos y configuracion de orden/relaciones)
+- `GET /api/:entity` - Listar registros (`students`, `subjects`, `enrollments`)
+- `GET /api/:entity/:pk...` - Obtener un registro por clave primaria
+- `POST /api/:entity` - Crear registro
+- `PUT /api/:entity/:pk...` - Actualizar registro
+- `DELETE /api/:entity/:pk...` - Eliminar registro
 
-### Inscripciones
-- `GET /api/enrollments` - Listar todas las inscripciones
-- `GET /api/enrollments/:numero_libreta/:cod_mat` - Obtener inscripción específica
-- `POST /api/enrollments` - Crear nueva inscripción
-- `PUT /api/enrollments/:numero_libreta/:cod_mat` - Actualizar inscripción
-- `DELETE /api/enrollments/:numero_libreta/:cod_mat` - Eliminar inscripción
+Notas:
+
+- Para PK compuesta se pasan multiples segmentos de path (ejemplo: `/api/enrollments/1234/MAT101`).
+- El `PUT` identifica el registro por la PK original en la URL y permite enviar una PK nueva en el body (correccion de claves).
+- En `enrollments`, las FK a `students` y `subjects` usan `ON UPDATE CASCADE`, por lo que cambios de PK en tablas padre se propagan manteniendo consistencia referencial.
+- Regla de listado: se muestran todas las columnas de la entidad menos las definidas en `app_entity_hidden_columns`, y luego se agregan solo las columnas referenciadas definidas en `app_shown_referenced_entity_columns`.
+
+### Efecto Operativo de Metadata
+
+Las tablas de metadata no son solo descriptivas: al insertar, actualizar o borrar filas, aplican cambios reales.
+
+- `app_entity_column_nullability`: aplica `SET/DROP NOT NULL` sobre columnas fisicas.
+- `app_entity_column_uniqueness`: aplica `ADD/DROP CONSTRAINT UNIQUE` sobre columnas fisicas.
+- `app_entity_indexes` y `app_entity_index_columns`: crean, recrean o eliminan indices fisicos.
+- `app_entity_foreign_key_groups` y `app_entity_foreign_keys`: crean, recrean o eliminan constraints FK fisicas (incluyendo acciones `ON UPDATE`/`ON DELETE`).
+
+Las tablas de metadata UI (`app_entity_hidden_columns`, `app_shown_referenced_entity_columns`, labels y submenus) impactan en API/frontend de forma dinamica, sin requerir rebuild.
+
+Reglas de seguridad para `app_user`:
+
+- Puede modificar datos de metadata dentro de los limites definidos por triggers de proteccion.
+- No puede alterar el schema (se revoca `CREATE` sobre `public`; tampoco es owner de las tablas).
+- No puede insertar/actualizar/borrar filas protegidas del catalogo de metadata (por ejemplo entidades `app_*`, acciones y submenus base).
 
 ## Desarrollo Futuro
 
