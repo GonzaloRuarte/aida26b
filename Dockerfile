@@ -27,6 +27,7 @@ RUN cd backend && npm install --production
 
 # Copy built artifacts
 COPY --from=builder /app/backend/dist ./backend/dist
+COPY --from=builder /app/backend/scripts ./backend/scripts
 COPY --from=builder /app/frontend/dist ./frontend/dist
 
 # Expose backend port and set working directory

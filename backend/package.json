@@ -8,7 +8,8 @@
     "build-backend": "tsc",
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
-    "watch": "nodemon --exec ts-node src/server.ts"
+    "watch": "nodemon --exec ts-node src/server.ts",
+    "smoke:schema-studio": "node scripts/schema-studio-smoke.js"
   },
   "dependencies": {
     "express": "^4.18.2",

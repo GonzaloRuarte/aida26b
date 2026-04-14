@@ -5,8 +5,24 @@ CREATE TABLE IF NOT EXISTS app_option_set_definitions (
     option_set_key VARCHAR(100) PRIMARY KEY,
     source_kind VARCHAR(50) NOT NULL,
     label_es VARCHAR(200) NOT NULL,
-    label_en VARCHAR(200) NOT NULL
+    label_en VARCHAR(200) NOT NULL,
+    CONSTRAINT app_option_set_definitions_source_kind_check
+        CHECK (source_kind IN ('entities', 'tables', 'referential_actions', 'ui_actions'))
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'app_option_set_definitions_source_kind_check'
+          AND conrelid = 'app_option_set_definitions'::regclass
+    ) THEN
+        ALTER TABLE app_option_set_definitions
+            ADD CONSTRAINT app_option_set_definitions_source_kind_check
+            CHECK (source_kind IN ('entities', 'tables', 'referential_actions', 'ui_actions'));
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS app_ui_messages (
     message_key VARCHAR(100) PRIMARY KEY,

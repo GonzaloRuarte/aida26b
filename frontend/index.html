@@ -65,6 +65,7 @@
         .container {
             width: 100%;
             height: 100%;
+            min-height: 0;
             margin: 0;
             position: relative;
             z-index: 1;
@@ -76,6 +77,7 @@
             box-shadow: var(--shadow);
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         h1 {
@@ -89,31 +91,49 @@
         #app-root {
             display: grid;
             gap: 18px;
+            flex: 1;
+            height: 100%;
+            min-height: 0;
         }
 
         .workspace-layout {
             display: grid;
             grid-template-columns: minmax(210px, 290px) minmax(0, 1fr);
+            grid-template-rows: minmax(0, 1fr);
             gap: 16px;
-            align-items: start;
-            min-height: calc(100vh - 190px);
+            align-items: stretch;
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
         }
 
         .sidebar {
-            position: sticky;
-            top: 12px;
-            align-self: start;
+            position: relative;
+            align-self: stretch;
+            height: 100%;
+            max-height: 100%;
+            min-height: 0;
+            display: flex;
+            overflow: hidden;
         }
 
         .content {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
             min-width: 0;
+            min-height: 0;
+            overflow: hidden;
         }
 
         .sections-host {
-            display: grid;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
             gap: 12px;
             min-width: 0;
             min-height: 0;
+            overflow: hidden;
         }
 
         .nav {
@@ -127,10 +147,15 @@
             border-radius: 20px;
             box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
             backdrop-filter: blur(12px);
-            overflow-y: auto;
+            min-height: 0;
+            flex: 1;
+            height: 100%;
+            max-height: 100%;
+            width: 100%;
+            overflow-y: scroll;
             overflow-x: hidden;
             scrollbar-gutter: stable;
-            min-height: 0;
+            overscroll-behavior: contain;
         }
 
         .nav button {
@@ -159,6 +184,7 @@
         }
 
         .nav-group {
+            flex: 0 0 auto;
             border: 1px solid rgba(168, 189, 223, 0.14);
             border-radius: 12px;
             background: rgba(13, 21, 37, 0.55);
@@ -196,7 +222,9 @@
             border-radius: 22px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
             min-width: 0;
-            height: calc(100vh - 210px);
+            height: auto;
+            flex: 1;
+            min-height: 0;
             overflow: hidden;
             flex-direction: column;
         }
@@ -216,7 +244,7 @@
             max-width: 100%;
             border-radius: 16px;
             flex: 1;
-            min-height: 200px;
+            min-height: 0;
             scrollbar-gutter: stable both-edges;
         }
 
@@ -291,6 +319,242 @@
             color: white;
             margin-bottom: 10px;
             box-shadow: 0 10px 24px rgba(95, 135, 255, 0.22);
+        }
+
+        .list-controls {
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        .query-panel {
+            background: rgba(11, 16, 32, 0.75);
+            border: 1px solid rgba(168, 189, 223, 0.16);
+            border-radius: 12px;
+            padding: 8px 10px;
+        }
+
+        .query-panel > summary {
+            cursor: pointer;
+            font-weight: 700;
+            color: #d8e4ff;
+            margin-bottom: 8px;
+        }
+
+        .query-block {
+            display: grid;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .query-block-title {
+            font-size: 0.82rem;
+            color: #c9d4ea;
+            font-weight: 700;
+        }
+
+        .query-rows-host {
+            display: grid;
+            gap: 6px;
+        }
+
+        .filter-logic-select {
+            max-width: 120px;
+            margin-bottom: 4px;
+        }
+
+        .query-row {
+            display: grid;
+            grid-template-columns: minmax(170px, 1.2fr) minmax(170px, 1.1fr) minmax(180px, 1.2fr) 90px auto;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .query-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .list-controls .apply-btn {
+            background: var(--accent);
+            color: #04161a;
+        }
+
+        .list-controls .clear-btn {
+            background: rgba(168, 189, 223, 0.18);
+            color: var(--text);
+            border-color: rgba(168, 189, 223, 0.24);
+        }
+
+        .list-state-bar {
+            display: grid;
+            grid-template-columns: minmax(240px, 1.3fr) minmax(160px, 1fr) minmax(160px, 1fr) auto auto auto auto auto minmax(170px, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .state-chips {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .state-chip {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(95, 135, 255, 0.16);
+            border: 1px solid rgba(95, 135, 255, 0.35);
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            color: #d8e4ff;
+        }
+
+        .state-chip.is-muted {
+            background: rgba(168, 189, 223, 0.12);
+            border-color: rgba(168, 189, 223, 0.24);
+            color: #c9d4ea;
+        }
+
+        .save-view-btn {
+            background: #3fba88;
+            color: #0d1c14;
+        }
+
+        .delete-view-btn {
+            background: rgba(232, 95, 111, 0.22);
+            color: #ffd5db;
+            border-color: rgba(232, 95, 111, 0.45);
+        }
+
+        .list-error {
+            grid-column: 1 / -1;
+            background: rgba(232, 95, 111, 0.14);
+            border: 1px solid rgba(232, 95, 111, 0.35);
+            color: #ffd5db;
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-size: 0.86rem;
+        }
+
+        .page-btn {
+            min-width: 42px;
+            background: rgba(168, 189, 223, 0.18);
+            color: var(--text);
+            border-color: rgba(168, 189, 223, 0.24);
+        }
+
+        .page-info {
+            font-size: 0.84rem;
+            color: #c9d4ea;
+        }
+
+        .column-picker-toggle {
+            background: rgba(95, 135, 255, 0.22);
+            color: #d8e4ff;
+            border-color: rgba(95, 135, 255, 0.35);
+        }
+
+        .column-picker-panel {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 6px;
+            background: rgba(11, 16, 32, 0.75);
+            border: 1px solid rgba(168, 189, 223, 0.16);
+            border-radius: 10px;
+            padding: 8px;
+        }
+
+        .column-picker-panel label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+            font-size: 0.84rem;
+            font-weight: 600;
+            color: #c9d4ea;
+        }
+
+        .studio-entity-select {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .studio-action-bar {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .studio-add-btn {
+            background: var(--accent);
+            color: #04161a;
+        }
+
+        .studio-reload-btn {
+            background: rgba(168, 189, 223, 0.18);
+            color: var(--text);
+            border-color: rgba(168, 189, 223, 0.24);
+        }
+
+        .studio-save-btn {
+            background: #3fba88;
+            color: #0d1c14;
+        }
+
+        .studio-rows-host {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .studio-row {
+            display: grid;
+            grid-template-columns: minmax(120px, 1.2fr) minmax(130px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) auto auto auto 90px auto;
+            gap: 6px;
+            align-items: center;
+            background: rgba(11, 16, 32, 0.75);
+            border: 1px solid rgba(168, 189, 223, 0.16);
+            border-radius: 12px;
+            padding: 8px;
+        }
+
+        .studio-row input,
+        .studio-row select {
+            margin: 0;
+        }
+
+        .studio-flag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.82rem;
+            margin: 0;
+            font-weight: 600;
+        }
+
+        .studio-remove-row {
+            background: rgba(232, 95, 111, 0.22);
+            color: #ffd5db;
+            border-color: rgba(232, 95, 111, 0.45);
+        }
+
+        .studio-message {
+            background: rgba(63, 186, 136, 0.14);
+            border: 1px solid rgba(63, 186, 136, 0.35);
+            color: #c9f3dd;
+            border-radius: 10px;
+            padding: 7px 10px;
+            font-size: 0.86rem;
+        }
+
+        .studio-message.error {
+            background: rgba(232, 95, 111, 0.14);
+            border-color: rgba(232, 95, 111, 0.35);
+            color: #ffd5db;
         }
 
         form {
@@ -372,22 +636,52 @@
         @media (max-width: 980px) {
             .workspace-layout {
                 grid-template-columns: 1fr;
+                height: auto;
+                min-height: auto;
             }
 
             .sidebar {
                 position: static;
-            }
-
-            .nav {
-                flex-direction: row;
-                flex-wrap: wrap;
+                height: auto;
+                max-height: none;
                 overflow: visible;
             }
 
+            .nav {
+                flex-direction: column;
+                flex-wrap: nowrap;
+                overflow-y: scroll;
+                overflow-x: hidden;
+                height: auto;
+                max-height: none;
+                min-height: 0;
+            }
+
+            .section {
+                height: auto;
+                min-height: 320px;
+            }
+
+            .list-controls {
+                display: block;
+            }
+
+            .query-row {
+                grid-template-columns: 1fr;
+            }
+
+            .list-state-bar {
+                grid-template-columns: 1fr;
+            }
+
+            .studio-row {
+                grid-template-columns: 1fr;
+            }
+
             .nav button {
-                text-align: center;
-                flex: 1;
-                min-width: 100px;
+                text-align: left;
+                flex: 0 0 auto;
+                min-width: 0;
             }
         }
 

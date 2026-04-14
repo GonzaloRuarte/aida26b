@@ -9,7 +9,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       AIDA26_OWNER_USER: ${AIDA26_OWNER_USER:-aida26_owner}
       AIDA26_APP_USER: ${AIDA26_APP_USER:-aida26_user}
-      AIDA26_APP_PASSWORD: ${AIDA26_APP_PASSWORD:-app_local_password}
+      AIDA26_APP_PASSWORD: ${AIDA26_APP_PASSWORD:?AIDA26_APP_PASSWORD is required}
     ports:
       - "${DB_EXPOSE_PORT:-5432}:5432"
     volumes:
@@ -37,7 +37,9 @@ services:
       DB_PORT: 5432
       DB_NAME: faculty_management
       DB_USER: ${AIDA26_APP_USER:-aida26_user}
-      DB_PASSWORD: ${AIDA26_APP_PASSWORD:-app_local_password}
+      DB_PASSWORD: ${AIDA26_APP_PASSWORD:?AIDA26_APP_PASSWORD is required}
+      SCHEMA_STUDIO_DB_USER: ${SCHEMA_STUDIO_DB_USER:?SCHEMA_STUDIO_DB_USER is required}
+      SCHEMA_STUDIO_DB_PASSWORD: ${SCHEMA_STUDIO_DB_PASSWORD:?SCHEMA_STUDIO_DB_PASSWORD is required}
     ports:
       - "${APP_PORT:-3000}:3000"
 

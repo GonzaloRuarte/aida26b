@@ -63,6 +63,8 @@ Este proyecto implementa un sistema de gestión académica para la Facultad de C
    DB_NAME=faculty_management
    DB_USER=tu_usuario
    DB_PASSWORD=tu_contraseña
+   SCHEMA_STUDIO_DB_USER=usuario_ddl_con_owner_o_superuser
+   SCHEMA_STUDIO_DB_PASSWORD=contraseña_ddl
    PORT=3000
    ```
 4. Compilar: `npm run build`
@@ -94,7 +96,15 @@ Este proyecto implementa un sistema de gestión académica para la Facultad de C
    ```bash
    docker compose down
    ```
-5. Reinicializar base de datos desde cero (reaplica `schema.sql`):
+5. Importante:
+   - `database/schema.sql` es el script de bootstrap (inicializacion completa con roles, grants y objetos base).
+   - `database/schema.generated.sql` es el snapshot estable generado desde la DB.
+   - La fuente de verdad operativa para cambios incrementales son las migraciones en `database/migrations`.
+6. Regenerar snapshot de schema (estable) desde la DB corriendo:
+   ```powershell
+   .\database\scripts\generate-schema.ps1
+   ```
+7. Reinicializar base de datos desde cero (reaplica `schema.sql`):
    ```bash
    docker compose down -v
    docker compose up --build
@@ -130,6 +140,12 @@ Get-Content .\database\migrations\009_metadata_hardening_data_types_and_index_or
 Get-Content .\database\migrations\010_pk_order_and_data_type_ui_profiles.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
 Get-Content .\database\migrations\011_namespaced_physical_indexes.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
 Get-Content .\database\migrations\012_ui_messages_and_option_set_definitions.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\013_option_set_items_function.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\014_frontend_metadata_bundle.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\015_regex_validations_and_menu_regrouping.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\016_guard_metadata_app_user_setting_safe.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\017_replace_redundant_fk_dependency_tables_with_views.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
+Get-Content .\database\migrations\018_convert_partially_derivable_metadata_tables_to_views.sql | docker compose exec -T db psql -U postgres -d faculty_management -v ON_ERROR_STOP=1
 ```
 
 ### Acceso Manual a la DB como Owner
@@ -160,6 +176,18 @@ Get-Content .\database\migrations\012_ui_messages_and_option_set_definitions.sql
 - `POST /api/:entity` - Crear registro
 - `PUT /api/:entity/:pk...` - Actualizar registro
 - `DELETE /api/:entity/:pk...` - Eliminar registro
+
+### Schema Studio (DDL controlado en backend)
+
+- `GET /api/schema-studio/entities` - Entidades de negocio editables desde Schema Studio
+- `GET /api/schema-studio/:entity` - Modelo estructural de la entidad (columnas, PK, FKs, indices)
+- `PUT /api/schema-studio/:entity` - Aplicar cambios estructurales de forma transaccional
+
+Notas:
+
+- El guardado de Schema Studio ejecuta DDL (`ALTER TABLE`, constraints e indices) y requiere un rol con privilegios de owner/superuser.
+- El backend usa credenciales dedicadas (`SCHEMA_STUDIO_DB_USER`, `SCHEMA_STUDIO_DB_PASSWORD`) solo para esta operación.
+- No dejes credenciales por defecto en `.env`; define valores explícitos para `AIDA26_APP_PASSWORD`, `SCHEMA_STUDIO_DB_USER` y `SCHEMA_STUDIO_DB_PASSWORD`.
 
 Notas:
 
