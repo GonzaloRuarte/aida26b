@@ -4,33 +4,34 @@
 const API_BASE = '/api';
 
 type TableStructure = {
-  columns: Record<string, { type: string }>
+  columns: Record<string, {type:string}>
   pk: string
   uiName: string
+  endpoint? : string
 }
 
 const structure = {
   tables: {
     students: {
-      columns: {
-        numero_libreta: { type: 'string', label: "Número de Libreta / Student ID:" },
-        dni: { type: 'string' },
-        first_name: { type: 'string' },
-        last_name: { type: 'string' },
-        email: { type: 'string' },
-        enrollment_date: { type: 'string' },
-        status: { type: 'string' },
+      columns:{
+        numero_libreta   :{type: 'string', label: "Número de Libreta / Student ID:"},
+        dni              :{type: 'string'},
+        first_name       :{type: 'string'},
+        last_name        :{type: 'string'},
+        email            :{type: 'string'},
+        enrollment_date  :{type: 'string'},
+        status           :{type: 'string'},
       },
       pk: 'numero_libreta',
       uiName: 'Student'
     },
     subject: {
-      columns: {
-        cod_mat: { type: 'string' },
-        name: { type: 'string' },
-        description: { type: 'string' },
-        credits: { type: 'string' },
-        department: { type: 'string' },
+      columns:{
+        cod_mat     :{type: 'string'},
+        name        :{type: 'string'},
+        description :{type: 'string'},
+        credits     :{type: 'string'},
+        department  :{type: 'string'},
       },
       pk: 'cod_mat',
       uiName: 'Subject'
@@ -126,17 +127,19 @@ function showSection(section: string) {
 }
 
 //Load 
-async function loadTableData(endpoint: string, tableElement: HTMLTableElement, structureKey: keyof typeof structure.tables) {
+async function loadTableData(tableElement: HTMLTableElement, structureKey: keyof typeof structure.tables) {
+  const tableConfig = structure.tables[structureKey] as any;
+  const endpoint = tableConfig.endpoint || structureKey;
   try {
     const response = await fetch(`${API_BASE}/${endpoint}`);
     let data = await response.json();
-    renderAnyTable(tableElement, structure.tables[structureKey] as any, data);
+    renderAnyTable(tableElement, tableConfig, data);
   } catch (error) {
     console.error(`Error loading ${endpoint}:`, error);
   }
 }
-const loadStudents = () => loadTableData('students', studentsTable, 'students');
-const loadSubjects = () => loadTableData('subjects', subjectsTable, 'subject');
+const loadStudents = () => loadTableData(studentsTable, 'students');
+const loadSubjects = () => loadTableData(subjectsTable, 'subject');
 
 async function loadEnrollments() {
   try {
@@ -148,18 +151,18 @@ async function loadEnrollments() {
   }
 }
 
-function renderAnyTable(tableElement: HTMLTableElement, tableStructure: TableStructure, records: Record<string, any>[]) {
+function renderAnyTable(tableElement: HTMLTableElement, tableStructure: TableStructure, records: Record<string, any>[]){
   const tbody = tableElement.querySelector('tbody')!;
   tbody.innerHTML = '';
 
   records.forEach(record => {
-    const { pk, uiName } = tableStructure;
+    const {pk, uiName} = tableStructure;
     const pkValue = encodeURIComponent(record[pk]);
     const row = document.createElement('tr');
-    row.innerHTML =
+    row.innerHTML = 
       Object.entries(tableStructure.columns).map(([name]) => `<td>${record[name] || ''}</td>`).join('')
       +
-      `
+    `
       <td class="actions">
         <button class="edit-btn" onclick="edit${uiName}('${pkValue}')">Editar / Edit</button>
         <button class="delete-btn" onclick="delete${uiName}('${pkValue}')">Eliminar / Delete</button>
