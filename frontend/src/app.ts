@@ -3,12 +3,40 @@
 
 const API_BASE = '/api';
 
+
+
+type TypeMap = {
+  string: string;
+  number: number;
+  boolean: boolean;
+  date: Date;
+};
+
+type MyTypeNames = keyof TypeMap;
+
+
+type ColumnDef = {
+  type: MyTypeNames;
+  label?: string;
+}
+
 type TableStructure = {
-  columns: Record<string, {type:string}>
+  columns: Record<string, ColumnDef>
   pk: string
   uiName: string
   endpoint? : string
 }
+
+type InferType<FieldDefs extends Record<string, ColumnDef>> = {
+  [K in keyof FieldDefs]: TypeMap[FieldDefs[K]['type']]
+}
+
+function defineTable<C extends Record<string, ColumnDef>>(def: {
+  columns: C;
+  pk: string;
+  uiName: string;
+  endpoint?: string;
+}) { return def; }
 
 const structure = {
   tables: {
@@ -24,7 +52,7 @@ const structure = {
       },
       pk: 'numero_libreta',
       uiName: 'Student'
-    },
+    } satisfies TableStructure,
     subject: {
       columns:{
         cod_mat     :{type: 'string'},
@@ -35,7 +63,7 @@ const structure = {
       },
       pk: 'cod_mat',
       uiName: 'Subject'
-    },
+    } satisfies TableStructure,
     enrollments: {
         pk: 'numero_libreta', 
         uiName: 'Enrollment',
@@ -48,12 +76,17 @@ const structure = {
           grade: { type: 'string' },
           status: { type: 'string' }
         }
-    }
+    } satisfies TableStructure
   }
 }
 
+
+
+
+type Student = InferType<typeof structure.tables.students.columns>;
+
 // Type definitions
-interface Student {
+interface StudentAnterior {
   numero_libreta: string;
   dni: string;
   first_name: string;
@@ -187,6 +220,7 @@ function renderAnyTable(tableElement: HTMLTableElement, tableStructure: TableStr
 
 // Render table functions
 function renderStudentsTable(students: Student[]) {
+  console.log(`viendo los estudiantes que arrancan con ${students[0].first_name}`)
   return renderAnyTable(studentsTable, structure.tables.students, students);
 }
 
