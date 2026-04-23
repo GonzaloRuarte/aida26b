@@ -31,12 +31,6 @@ type InferType<FieldDefs extends Record<string, ColumnDef>> = {
   [K in keyof FieldDefs]: TypeMap[FieldDefs[K]['type']]
 }
 
-function defineTable<C extends Record<string, ColumnDef>>(def: {
-  columns: C;
-  pk: string;
-  uiName: string;
-  endpoint?: string;
-}) { return def; }
 
 const structure = {
   tables: {
@@ -53,7 +47,7 @@ const structure = {
       pk: 'numero_libreta',
       uiName: 'Student'
     } satisfies TableStructure,
-    subject: {
+    subjects: {
       columns:{
         cod_mat     :{type: 'string'},
         name        :{type: 'string'},
@@ -85,35 +79,9 @@ const structure = {
 
 type Student = InferType<typeof structure.tables.students.columns>;
 
-// Type definitions
-interface StudentAnterior {
-  numero_libreta: string;
-  dni: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  enrollment_date: string;
-  status: string;
-}
+type Subject = InferType<typeof structure.tables.subjects.columns>;
 
-interface Subject {
-  cod_mat: string;
-  name: string;
-  description: string;
-  credits: number;
-  department: string;
-}
-
-interface Enrollment {
-  numero_libreta: string;
-  cod_mat: string;
-  enrollment_date: string;
-  grade: number;
-  status: string;
-  first_name?: string;
-  last_name?: string;
-  subject_name?: string;
-}
+type Enrollment = InferType<typeof structure.tables.enrollments.columns>;
 
 // DOM elements
 const studentsBtn = document.getElementById('students-btn') as HTMLButtonElement;
@@ -185,17 +153,8 @@ async function loadTableData(tableElement: HTMLTableElement, structureKey: keyof
   }
 }
 const loadStudents = () => loadTableData(studentsTable, 'students');
-const loadSubjects = () => loadTableData(subjectsTable, 'subject');
-
-async function loadEnrollments() {
-  try {
-    const response = await fetch(`${API_BASE}/enrollments`);
-    const enrollments: Enrollment[] = await response.json();
-    renderEnrollmentsTable(enrollments);
-  } catch (error) {
-    console.error('Error loading enrollments:', error);
-  }
-}
+const loadSubjects = () => loadTableData(subjectsTable, 'subjects');
+const loadEnrollments = () => loadTableData(enrollmentsTable, 'enrollments');
 
 function renderAnyTable(tableElement: HTMLTableElement, tableStructure: TableStructure, records: Record<string, any>[]){
   const tbody = tableElement.querySelector('tbody')!;
@@ -225,20 +184,11 @@ function renderStudentsTable(students: Student[]) {
 }
 
 function renderSubjectsTable(subjects: Subject[]) {
-  return renderAnyTable(subjectsTable, structure.tables.subject, subjects);
+  return renderAnyTable(subjectsTable, structure.tables.subjects, subjects);
 }
 
 function renderEnrollmentsTable(enrollments: Enrollment[]) {
-  return renderAnyTable(enrollmentsTable, structure.tables.enrollments, enrollments.map(e => ({
-    numero_libreta: e.numero_libreta,
-    student_name: `${e.first_name ?? ''} ${e.last_name ?? ''}`,
-    cod_mat: e.cod_mat,
-    subject_name: e.subject_name,
-    enrollment_date: e.enrollment_date,
-    grade: e.grade,
-    status: e.status
-  }))) 
-}
+  return renderAnyTable(enrollmentsTable, structure.tables.enrollments, enrollments);}
 
 // Form functions
 addStudentBtn.addEventListener('click', () => showStudentForm());
